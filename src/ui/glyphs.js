@@ -10,6 +10,33 @@ const WRAP = (body) =>
   `<svg class="glyph-svg" viewBox="0 0 100 100" aria-hidden="true" fill="none"
      stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 
+const VOID = WRAP(`
+  <path d="M20 76L76 18M28 84L84 26"/>
+  <path d="M40 65L31 53L48 49L44 34M60 42L69 52L54 58L58 73"/>
+  <path d="M14 88L33 81M67 19L87 12"/>
+`);
+
+const PHOENIX = WRAP(`
+  <path d="M50 24C43 39 43 57 50 78C57 57 57 39 50 24Z"/>
+  <path d="M47 43C35 30 18 25 8 31C23 38 31 50 43 60"/>
+  <path d="M53 43C65 30 82 25 92 31C77 38 69 50 57 60"/>
+  <path d="M45 75L34 91M50 77V95M55 75L66 91"/>
+`);
+
+const SINGULARITY = WRAP(`
+  <circle cx="50" cy="50" r="13" fill="currentColor" stroke="none"/>
+  <ellipse cx="50" cy="50" rx="42" ry="17" transform="rotate(-18 50 50)"/>
+  <ellipse cx="50" cy="50" rx="31" ry="10" transform="rotate(24 50 50)"/>
+  <path d="M15 25L25 30M75 72L87 79"/>
+`);
+
+const WORLDTREE = WRAP(`
+  <path d="M50 88V43M50 57L31 39M50 49L68 31M50 69L68 58"/>
+  <path d="M50 88C39 82 27 83 17 90M50 88C62 80 74 83 86 90"/>
+  <circle cx="28" cy="32" r="13"/><circle cx="50" cy="24" r="16"/>
+  <circle cx="72" cy="30" r="14"/><circle cx="66" cy="51" r="12"/>
+`);
+
 /**
  * Ice — a six-fold snowflake over a rising lance.
  *
@@ -107,6 +134,10 @@ const GLACIER = WRAP(`
 
 /** Keyed by the ids in `ELEMENTS`. */
 export const ELEMENT_SIGILS = {
+  void: VOID,
+  phoenix: PHOENIX,
+  singularity: SINGULARITY,
+  worldtree: WORLDTREE,
   ice: ICE,
   thunder: THUNDER,
   meteor: METEOR,

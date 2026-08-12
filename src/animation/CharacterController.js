@@ -16,6 +16,11 @@ import { disposeObject } from '../utils/dispose.js';
 const CHARACTER_URL = './models/Idle.fbx';
 /** This export carries no material, so the skin ships beside it as a file. */
 const CHARACTER_TEXTURE_URL = './models/diffuse.png';
+/** Looping locomotion clips authored against the same Mixamo skeleton. */
+const LOCOMOTION_FILES = {
+  walk: './models/Walking.fbx',
+  run: './models/Running.fbx'
+};
 /** One file per entry in `CAST_ANIMATIONS`; only their clips are kept. */
 const castUrl = (name) => `./models/${name}.fbx`;
 /** Mixamo exports in centimetres. */
@@ -26,9 +31,9 @@ const TARGET_HEIGHT = 1.78;
 /**
  * Loads the rigged FBX, normalises it for the scene and drives its animation.
  *
- * The character never leaves the spot — it breathes on a loop, turns to face
- * where you are aiming, and throws one of the cast clips when you fire. Those
- * clips ship as separate Mixamo exports of the *same* skeleton, so only their
+ * The character blends between idle, walking and running, turns to face its
+ * movement or aim direction, and throws one of the cast clips when you fire.
+ * The clips ship as separate Mixamo exports of the *same* skeleton, so only their
  * `AnimationClip` is kept: the mixer binds tracks by bone name, which is all
  * that a shared rig needs for a clip authored in another file to play here.
  *
@@ -52,6 +57,11 @@ export class CharacterController {
     this.mixer = null;
     /** The looping breath, always running underneath a cast. */
     this.idle = null;
+    /** idle / walk / run looping actions. */
+    this.locomotion = new Map();
+    /** The base action currently visible, and the one movement currently wants. */
+    this._base = null;
+    this._desiredBase = null;
     /** name → one-shot cast action. */
     this.casts = new Map();
     /** The cast currently being thrown, null while idling. */
@@ -78,11 +88,15 @@ export class CharacterController {
   async load(assets) {
     // The cast files are the same character again, so they cost a parse each
     // but nothing at run time — everything but the clip is thrown away below.
-    const [fbx, skin, ...castFiles] = await Promise.all([
+    const locomotionEntries = Object.entries(LOCOMOTION_FILES);
+    const [fbx, skin, ...animationFiles] = await Promise.all([
       assets.loadFBX(CHARACTER_URL),
       assets.loadTexture(CHARACTER_TEXTURE_URL),
+      ...locomotionEntries.map(([, url]) => assets.loadFBX(url)),
       ...CAST_ANIMATIONS.map((name) => assets.loadFBX(castUrl(name)))
     ]);
+    const locomotionFiles = animationFiles.slice(0, locomotionEntries.length);
+    const castFiles = animationFiles.slice(locomotionEntries.length);
     // The FBX resolves before its textures do; material prep inspects them.
     await assets.settled();
 
@@ -123,13 +137,45 @@ export class CharacterController {
       this.idle = this.mixer.clipAction(idleClip);
       this.idle.setLoop(LoopRepeat, Infinity);
       this.idle.play();
+      this.locomotion.set('idle', this.idle);
+      this._base = this.idle;
+      this._desiredBase = this.idle;
     }
 
     const bones = new Set();
     fbx.traverse((node) => bones.add(node.name));
+    locomotionEntries.forEach(([name], index) =>
+      this._registerLocomotion(name, locomotionFiles[index], bones)
+    );
     CAST_ANIMATIONS.forEach((name, index) => this._registerCast(name, castFiles[index], bones));
 
     return this;
+  }
+
+  /** Keep a looping movement clip and release the duplicate imported rig. */
+  _registerLocomotion(name, file, bones) {
+    const clip = (file?.animations ?? [])[0];
+    if (!clip) {
+      console.warn(`[CharacterController] "${name}" carries no animation`);
+      disposeObject(file);
+      return;
+    }
+
+    const compatibleTracks = clip.tracks.filter((track) => bones.has(track.name.split('.')[0]));
+    if (compatibleTracks.length === 0) {
+      console.warn(`[CharacterController] "${name}" does not match this skeleton`);
+      disposeObject(file);
+      return;
+    }
+
+    // Mixamo may export finger tracks even when the display rig has no finger
+    // bones. Dropping them avoids PropertyBinding warnings and wasted updates.
+    clip.tracks = compatibleTracks;
+    clip.name = name;
+    const action = this.mixer.clipAction(clip);
+    action.setLoop(LoopRepeat, Infinity);
+    this.locomotion.set(name, action);
+    disposeObject(file);
   }
 
   /**
@@ -271,7 +317,7 @@ export class CharacterController {
    */
   playCast(name) {
     const next = this.casts.get(name) ?? this.casts.get(CAST_ANIMATIONS[0]);
-    if (!next || !this.idle) return;
+    if (!next || !this._base) return;
 
     const previous = this._cast;
     this._cast = next;
@@ -284,7 +330,7 @@ export class CharacterController {
     // clip still finishing on a re-cast — so the body never drops to the bind
     // pose for a frame in between two throws. Re-throwing the *same* clip only
     // restarts it: `reset()` has already left it at full weight.
-    const from = previous ?? this.idle;
+    const from = previous ?? this._base;
     if (from !== next) next.crossFadeFrom(from, settings.character.castBlendIn, false);
   }
 
@@ -298,11 +344,15 @@ export class CharacterController {
     if (event.action !== this._cast) return;
     this._cast = null;
 
-    // The fade in disabled the idle once its weight hit zero; wake it back up
-    // before asking it to come in again.
-    this.idle.enabled = true;
-    this.idle.setEffectiveTimeScale(1);
-    this.idle.crossFadeFrom(event.action, settings.character.castBlendOut, false);
+    // Movement may have changed while the cast was playing. Return to the base
+    // action wanted now, not necessarily the one the cast started from.
+    const next = this._desiredBase ?? this.idle;
+    if (!next) return;
+    this._base = next;
+    next.reset();
+    next.setEffectiveTimeScale(1);
+    next.play();
+    next.crossFadeFrom(event.action, settings.character.castBlendOut, false);
   };
 
   /* ------------------------------------------------------------------ */
@@ -327,6 +377,26 @@ export class CharacterController {
     // Shortest way round, so aiming across the -Z seam does not spin the body.
     const delta = MathUtils.euclideanModulo(yaw - current + Math.PI, Math.PI * 2) - Math.PI;
     this.setFacing(current + delta * (1 - Math.pow(MathUtils.clamp(rate, 1e-6, 1), dt)));
+  }
+
+  /** Blend the base layer between idle, walking and running. */
+  setLocomotion(name) {
+    const next = this.locomotion.get(name) ?? this.idle;
+    if (!next || next === this._desiredBase) return;
+    this._desiredBase = next;
+
+    // Let the cast own the body until it finishes; its completion handler will
+    // blend into whichever movement state is wanted by then.
+    if (this.isCasting) return;
+
+    const previous = this._base;
+    this._base = next;
+    next.reset();
+    next.setEffectiveTimeScale(1);
+    next.play();
+    if (previous && previous !== next) {
+      next.crossFadeFrom(previous, settings.character.locomotionBlend, false);
+    }
   }
 
   /**
@@ -383,6 +453,9 @@ export class CharacterController {
     this.mixer?.stopAllAction();
     this.mixer = null;
     this.idle = null;
+    this.locomotion.clear();
+    this._base = null;
+    this._desiredBase = null;
     this.casts.clear();
     this._cast = null;
     disposeObject(this.root);

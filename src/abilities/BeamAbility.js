@@ -12,6 +12,7 @@ import { DecalType } from '../effects/GroundDecals.js';
 import { BurstMode } from '../effects/BurstSphere.js';
 import { LAYER } from '../core/Layers.js';
 import { frame } from '../core/FrameUniforms.js';
+import { qualityCount } from '../core/Quality.js';
 import { settings } from '../config/settings.js';
 import { getColor } from '../utils/color.js';
 import { saturate, lerp, smoothstep, Easing, randRange } from '../utils/math.js';
@@ -409,8 +410,8 @@ export class BeamAbility extends Ability {
     state.charge = this.charge;
     state.seed = this._seed;
 
-    this._coilCount = Math.max(1, Math.min(MAX_COILS, Math.round(c.coils)));
-    this._ringCount = Math.max(1, Math.min(MAX_RINGS, Math.round(c.rings)));
+    this._coilCount = Math.min(MAX_COILS, qualityCount(c.coils, 'instances', 1));
+    this._ringCount = Math.min(MAX_RINGS, qualityCount(c.rings, 'instances', 1));
     state.coils = this._coilCount;
     state.rings = this._ringCount;
     this.coilGeometry.instanceCount = this._coilCount;

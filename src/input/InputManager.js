@@ -7,9 +7,8 @@ import { EventEmitter } from '../utils/EventEmitter.js';
  * Events:
  *   `pointer:move` (ndc)          — every move, armed or not
  *   `pointer:confirm` (ndc)       — left click on the viewport
- *   `action` (name, slot)         — everything else, already named by intent.
- *                                   `ability` carries the 0-based slot index,
- *                                   which App maps through `ELEMENTS`.
+ *   `action` (name, element)      — everything else, already named by intent.
+ *                                   `ability` carries a stable ability id.
  *
  * Pointer events that begin on top of DOM UI (the editor, the HUD) are ignored
  * so dragging a slider never fires the ability.
@@ -30,6 +29,7 @@ export class InputManager extends EventEmitter {
     window.addEventListener('pointermove', this._onPointerMove);
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
+    window.addEventListener('blur', this._onBlur);
     this.dom.addEventListener('contextmenu', this._onContextMenu);
   }
 
@@ -70,30 +70,36 @@ export class InputManager extends EventEmitter {
     this.keys.add(event.code);
 
     switch (event.code) {
-      // Ability slots. Keep these in step with `ELEMENT_META[...].key`.
-      case 'KeyQ':
+      // Ability ids. Keep these in step with `ELEMENT_META[...].key`.
       case 'Digit1':
-        this.emit('action', 'ability', 0);
+        this.emit('action', 'ability', 'void');
+        break;
+      case 'Digit2':
+        this.emit('action', 'ability', 'phoenix');
+        break;
+      case 'Digit3':
+        this.emit('action', 'ability', 'singularity');
+        break;
+      case 'Digit4':
+        this.emit('action', 'ability', 'worldtree');
+        break;
+      case 'KeyQ':
+        this.emit('action', 'ability', 'ice');
         break;
       case 'KeyE':
-      case 'Digit2':
-        this.emit('action', 'ability', 1);
+        this.emit('action', 'ability', 'thunder');
         break;
       case 'KeyR':
-      case 'Digit3':
-        this.emit('action', 'ability', 2);
+        this.emit('action', 'ability', 'meteor');
         break;
       case 'KeyF':
-      case 'Digit4':
-        this.emit('action', 'ability', 3);
+        this.emit('action', 'ability', 'beam');
         break;
       case 'KeyV':
-      case 'Digit5':
-        this.emit('action', 'ability', 4);
+        this.emit('action', 'ability', 'snare');
         break;
       case 'KeyX':
-      case 'Digit6':
-        this.emit('action', 'ability', 5);
+        this.emit('action', 'ability', 'glacier');
         break;
       case 'Escape':
         this.emit('action', 'cancel');
@@ -119,11 +125,19 @@ export class InputManager extends EventEmitter {
     this.keys.delete(event.code);
   };
 
+  _onBlur = () => this.keys.clear();
+
+  /** Whether a physical key is currently held. */
+  isDown(code) {
+    return this.enabled && this.keys.has(code);
+  }
+
   dispose() {
     this.dom.removeEventListener('pointerdown', this._onPointerDown);
     window.removeEventListener('pointermove', this._onPointerMove);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('blur', this._onBlur);
     this.dom.removeEventListener('contextmenu', this._onContextMenu);
     this.clear();
   }

@@ -8,6 +8,7 @@ import { DecalType } from '../effects/GroundDecals.js';
 import { BurstMode } from '../effects/BurstSphere.js';
 import { LAYER } from '../core/Layers.js';
 import { frame } from '../core/FrameUniforms.js';
+import { qualityCount } from '../core/Quality.js';
 import { settings } from '../config/settings.js';
 import { getColor } from '../utils/color.js';
 import { saturate, Easing, randRange } from '../utils/math.js';
@@ -336,10 +337,10 @@ export class SnareAbility extends Ability {
     // Roles are retired by setting their count to zero, which is how the whip
     // disappears the instant the ring takes over.
     const counts = state.counts;
-    counts.leash = travelling ? clampCount(c.leashStrands, MAX_LEASH) : 0;
-    counts.column = travelling ? 0 : clampCount(c.strands, MAX_COLUMN);
-    counts.tendril = travelling ? 0 : clampCount(c.tendrils, MAX_TENDRIL);
-    counts.rim = travelling ? 0 : clampCount(c.rimArcs, MAX_RIM);
+    counts.leash = travelling ? clampCount(qualityCount(c.leashStrands, 'instances', 0), MAX_LEASH) : 0;
+    counts.column = travelling ? 0 : clampCount(qualityCount(c.strands, 'instances', 0), MAX_COLUMN);
+    counts.tendril = travelling ? 0 : clampCount(qualityCount(c.tendrils, 'instances', 0), MAX_TENDRIL);
+    counts.rim = travelling ? 0 : clampCount(qualityCount(c.rimArcs, 'instances', 0), MAX_RIM);
 
     this._filamentCount = counts.leash + counts.column + counts.tendril + counts.rim;
     this.geometry.instanceCount = Math.max(1, this._filamentCount);

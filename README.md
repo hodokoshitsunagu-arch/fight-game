@@ -2,11 +2,24 @@
 
 A skillshot VFX sandbox built with **Three.js**, **Vite** and hand-written **GLSL**.
 
-Five abilities and two ways to aim them. Four are **line casts**: press the key to arm, a
+Ten abilities and two ways to aim them. Six are **line casts**: press the key to arm, a
 League-of-Legends style arrow appears on the ground and swings with the mouse, click to fire. The
-fifth is a **far cast**: the arrow is replaced by a circle with a deliberately thick boundary that
+other four are **area casts**: the arrow is replaced by a circle with a deliberately thick boundary that
 follows the cursor and answers the only question a ground-targeted AoE has to answer before you
 commit — how much space is this going to take.
+
+**1 — Rift Sever.** A space blade opens a tall void seam with a black core, cyan-violet edges,
+inward-pulled debris, a ground fault and its own refraction layer before the seam zips shut.
+
+**2 — Solar Phoenix.** Fire feathers assemble into a low-flying, fully winged phoenix with a
+beating silhouette and layered tail, then dive into a sun wheel, pressure ring and burning mark.
+
+**3 — Gravity Singularity.** A compressed projectile becomes a genuinely dark event horizon with
+crossed accretion discs, orbiting debris and gravitational lensing, then collapses into a reverse
+supernova.
+
+**4 — Worldroot Bloom.** Fractal roots race across the floor while an instanced trunk, branches and
+leaf crown grow upward, pulse with emerald-gold sap, shed luminous seeds and dissolve from crown to root.
 
 **Q — Frost Lance.** A fracture front races out along the line while a field of ice crystals
 tears up out of the floor behind it — small and dense at your feet, opening into a wall of blades
@@ -42,7 +55,7 @@ whole cage is that same ribbon strip threaded along four different parametric pa
 targeting circle, the rime, the burns and the molten cracks are signed-distance and noise shaders,
 and the mist, sparks, chips and glitter are GPU particles.
 
-**Every parameter is a live slider** — 938 of them — and they stay live while the simulation is
+**Every parameter is a live slider**, and they stay live while the simulation is
 paused. That is the point of the project: freeze a frame mid-eruption, mid-strike or mid-burn with
 **P**, then reshape the silhouette, the palette and the timing against a still image.
 
@@ -73,30 +86,30 @@ npm run preview
 
 ### Assets
 
-Six binary assets are served from `public/` and loaded automatically at boot:
+Character and environment assets are served from `public/` and loaded automatically at boot:
 
 | File | Purpose |
 | --- | --- |
 | `public/models/Idle.fbx` | Rigged character **and** its idle animation clip |
 | `public/models/diffuse.png` | The character's colour map |
+| `public/models/Walking.fbx` | In-place walking animation |
+| `public/models/Running.fbx` | In-place running animation |
 | `public/models/cast1.fbx` | Cast animation |
 | `public/models/cast2.fbx` | Cast animation |
 | `public/models/cast3.fbx` | Cast animation — the default for Frost Lance, Root Snare and Glacier Crown |
 | `public/hdri/spruit_sunrise.hdr` | HDR probe used for image-based lighting and crystal reflections |
 
-All four FBX files are Mixamo exports of the same rig, each carrying a skinned mesh plus one
-animation stack. The character comes from the idle file; the cast files are loaded for their clip
-alone, and the duplicate rig that arrives with each one is released the moment its `AnimationClip`
-has been taken. Clips bind to the skeleton by bone name, which is the whole reason an animation
-authored in another file plays here without retargeting.
+All FBX files are Mixamo exports of the same rig. The character comes from the idle file; walking,
+running and casting files are loaded for their clips alone, and any duplicate scene data is released
+as soon as its `AnimationClip` has been taken. Clips bind to the skeleton by bone name, which is the
+whole reason an animation authored in another file plays here without retargeting.
 
 The rig ships no material, so `diffuse.png` is loaded beside it and assigned as the colour map when
 the imported materials are converted to PBR — an FBX that *does* carry an embedded texture keeps its
 own, since that map is authored against its own UVs.
 
 Every ability picks the clip it throws — `castAnim` in its settings block, a dropdown under **The
-cast** in its editor folder. Out of the box slots 1, 5 and 6 — Frost Lance, Root Snare and Glacier
-Crown — throw `cast3`, and the other three throw `cast1`. The clip is a one-shot laid over
+cast** in its editor folder. The clip is a one-shot laid over
 the looping idle, with `character.castBlendIn` / `castBlendOut` as the two edges of that overlap.
 
 The HDR is loaded as image-based lighting and as the reflection source for the ice — it is never
@@ -108,11 +121,18 @@ shown as a visible sky. The stage keeps its flat dark backdrop.
 
 | Input | Action |
 | --- | --- |
-| **Q** (or **1**) | Arm Frost Lance — press again to put it away |
-| **E** (or **2**) | Arm Storm Lance — press again to put it away |
-| **R** (or **3**) | Arm Cinder Fall — press again to put it away |
-| **F** (or **4**) | Arm Nova Beam — press again to put it away |
-| **V** (or **5**) | Arm Voltaic Snare — the far cast, aimed with a circle |
+| **1** | Arm Rift Sever — line cast |
+| **2** | Arm Solar Phoenix — line cast |
+| **3** | Arm Gravity Singularity — area cast |
+| **4** | Arm Worldroot Bloom — area cast |
+| **Q** | Arm Frost Lance — press again to put it away |
+| **E** | Arm Storm Lance — press again to put it away |
+| **R** | Arm Cinder Fall — press again to put it away |
+| **F** | Arm Nova Beam — press again to put it away |
+| **V** | Arm Voltaic Snare — area cast, aimed with a circle |
+| **X** | Arm Glacial Crown — area cast, aimed with a circle |
+| **W / A / S / D** | Move relative to the camera |
+| **Shift + movement** | Run |
 | **Move the mouse** | Swing the aim arrow, or move the far-cast circle |
 | **Left click** | Cast along the arrow, or drop the circle where it is |
 | **Esc** / **right click** | Cancel an armed cast |
@@ -129,14 +149,20 @@ set `minRange` to 0 if you would rather cast at your own feet, which is what the
 a trap you cannot drop on yourself is missing half its uses. Cooldowns are per ability too, so
 spending one slot never locks the other out.
 
+The editor's **Global → quality** selector applies immediately. High uses the full authored
+particle, instance and shader-sampling budgets with DPR capped at 1.75; Medium uses 70% / 75% /
+75% with a 1.50 cap; Low uses 40% / 50% / 50% with a 1.25 cap. It never overwrites the individual
+skill sliders, so changing quality is reversible and exported presets retain both the profile and
+the authored values.
+
 ---
 
 ## Project layout
 
 ```
 src/
-  abilities/      Ability base class (the travelling front), IceAbility, ThunderAbility,
-                  MeteorAbility, BeamAbility, SnareAbility, pooling manager
+  abilities/      Ability base class, ten procedural skills, shared showcase helpers,
+                  pooling manager
   animation/      FBX character loading, AnimationMixer, the per-ability cast clips,
                   the procedural cast lunge
   assets/         Procedural crystal and asteroid geometry, the bolt ribbon strip,

@@ -17,6 +17,7 @@ import { DecalType } from '../effects/GroundDecals.js';
 import { BurstMode } from '../effects/BurstSphere.js';
 import { LAYER } from '../core/Layers.js';
 import { frame } from '../core/FrameUniforms.js';
+import { qualityCount } from '../core/Quality.js';
 import { settings } from '../config/settings.js';
 import { getColor } from '../utils/color.js';
 import { saturate, lerp, smoothstep, Easing, randRange } from '../utils/math.js';
@@ -571,6 +572,7 @@ export class MeteorAbility extends Ability {
   _updateRock(retract) {
     const c = settings.meteor;
     const travelling = this.phase === AbilityPhase.TRAVEL;
+    const visibleChunks = Math.min(this._chunkCount, qualityCount(c.chunkCount, 'instances', 0));
 
     /* --- instance 0: the meteor itself --- */
     if (travelling) {
@@ -594,7 +596,7 @@ export class MeteorAbility extends Ability {
     const since = this._sinceImpact;
     const cool = Math.max(0.05, c.chunkCool);
 
-    for (let i = 0; i < this._chunkCount; i++) {
+    for (let i = 0; i < visibleChunks; i++) {
       const record = this.chunks[i];
       const radius = this._chunkRadius(record, c);
       const flight = this._chunkFlight(record, c, since, _pos);
@@ -612,7 +614,7 @@ export class MeteorAbility extends Ability {
       this.heats.array[1 + i] = saturate(1 - since / cool);
     }
 
-    this._used = travelling ? 1 : 1 + this._chunkCount;
+    this._used = travelling ? 1 : 1 + visibleChunks;
     this.rock.count = this._used;
     this.rock.instanceMatrix.needsUpdate = true;
     this.heats.needsUpdate = true;

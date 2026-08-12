@@ -16,6 +16,7 @@ import { noiseGLSL } from '../shaders/lib/noise.glsl.js';
 import { commonGLSL } from '../shaders/lib/common.glsl.js';
 import { sharedUniforms } from '../core/FrameUniforms.js';
 import { LAYER } from '../core/Layers.js';
+import { qualityCount } from '../core/Quality.js';
 
 /** Fragment silhouettes. Everything is procedural — no sprite textures. */
 export const ParticleShape = Object.freeze({
@@ -24,7 +25,8 @@ export const ParticleShape = Object.freeze({
   STREAK: 2, // velocity aligned spark
   LEAF: 3, // tapered leaf silhouette
   CHIP: 4, // angular rock fragment
-  RING: 5 // thin expanding ring — shockwaves
+  RING: 5, // thin expanding ring — shockwaves
+  FEATHER: 6 // long split plume — phoenix feathers
 });
 
 const FLOATS = {
@@ -76,6 +78,7 @@ export class ParticleSystem {
     stretch = false,
     swirl = false,
     lit = false,
+    attract = false,
     softFade = 0.6
   }) {
     this.name = name;
@@ -114,6 +117,7 @@ export class ParticleSystem {
     if (curl) defines.USE_CURL = '';
     if (stretch) defines.USE_STRETCH = '';
     if (swirl) defines.USE_SWIRL = '';
+    if (attract) defines.USE_ATTRACT = '';
     if (lit) defines.USE_LIT = '';
 
     this.material = new ShaderMaterial({
@@ -132,6 +136,7 @@ export class ParticleSystem {
         uTurbSpeed: { value: 0.35 },
         uSwirl: { value: 0 },
         uSwirlExpand: { value: 0.4 },
+        uAttraction: { value: 0 },
         uSpeedScale: { value: 1 },
         uSizeScale: { value: 1 },
         uLifeScale: { value: 1 },
@@ -160,9 +165,11 @@ export class ParticleSystem {
     this.mesh.layers.set(LAYER.VFX);
     this.mesh.renderOrder = additive ? 12 : 10;
     this.mesh.name = `Particles:${name}`;
+    this.mesh.visible = false;
 
     this._ranges = [];
     this._dirty = false;
+    this._visibleUntil = -Infinity;
   }
 
   get object3D() {
@@ -199,7 +206,8 @@ export class ParticleSystem {
    */
   emit(count, p) {
     if (count <= 0) return;
-    count = Math.min(count, this.capacity);
+    count = Math.min(qualityCount(count, 'particles'), this.capacity);
+    if (count <= 0) return;
 
     const {
       position,
@@ -218,6 +226,12 @@ export class ParticleSystem {
       tint = null,
       time = 0
     } = p;
+
+    this.mesh.visible = true;
+    this._visibleUntil = Math.max(
+      this._visibleUntil,
+      time + life * (1 + Math.max(0, lifeVariance)) * Math.max(1, this.uniforms.uLifeScale.value)
+    );
 
     const d = this.data;
 
@@ -294,8 +308,8 @@ export class ParticleSystem {
   /**
    * Exact number of particles still alive.
    *
-   * Only used for the HUD readout, so it is called on the stats interval rather
-   * than every frame — the simulation itself never needs this.
+   * Used by the HUD and as a sparse visibility check when a system reaches its
+   * predicted final death time.
    */
   countLive(time) {
     const { spawn, life } = this.data;
@@ -322,7 +336,11 @@ export class ParticleSystem {
   }
 
   /** Upload only the slots that changed this frame. */
-  flush() {
+  flush(time = 0) {
+    if (this.mesh.visible && time > this._visibleUntil) {
+      if (this.countLive(time) === 0) this.mesh.visible = false;
+      else this._visibleUntil = time + 0.25;
+    }
     if (!this._dirty) return;
     for (const [key, itemSize] of Object.entries(FLOATS)) {
       const attribute = this.attributes[key];
@@ -352,6 +370,8 @@ export class ParticleSystem {
     this._ranges.length = 0;
     this._dirty = false;
     this.cursor = 0;
+    this._visibleUntil = -Infinity;
+    this.mesh.visible = false;
   }
 
   dispose() {
@@ -373,6 +393,7 @@ const PARTICLE_VERTEX = /* glsl */ `
   uniform float uTurbSpeed;
   uniform float uSwirl;
   uniform float uSwirlExpand;
+  uniform float uAttraction;
   uniform float uSpeedScale;
   uniform float uSizeScale;
   uniform float uLifeScale;
@@ -433,6 +454,12 @@ const PARTICLE_VERTEX = /* glsl */ `
       vec3 rotated = vec3(rel.x * c - rel.z * s, rel.y, rel.x * s + rel.z * c);
       rotated *= 1.0 + uSwirlExpand * t;
       pos = anchor + rotated + vec3(0.0, 0.5 * uGravity.y * age * age, 0.0);
+    #endif
+
+    #ifdef USE_ATTRACT
+      vec3 toAnchor = aOrigin - pos;
+      float pull = min(length(toAnchor), uAttraction * age * age * 0.5);
+      pos += normalize(toAnchor + vec3(1e-5)) * pull;
     #endif
 
     // Turbulence: a cheap deterministic wobble, optionally upgraded to real
@@ -532,8 +559,15 @@ const PARTICLE_FRAGMENT = /* glsl */ `
       float r = 0.62 + 0.24 * sin(ang * 5.0 + vSeed * 30.0) + 0.1 * sin(ang * 9.0 - vSeed * 11.0);
       return smoothstep(r, r - 0.14, d);
 
-    #else                                // RING
+    #elif SHAPE == 5                     // RING
       return smoothstep(0.14, 0.0, abs(d - 0.82));
+
+    #else                                // FEATHER
+      float spine = smoothstep(0.08, 0.0, abs(c.x)) * smoothstep(1.0, -0.8, c.y);
+      float taper = max(0.0, 1.0 - abs(c.y));
+      float vane = smoothstep(taper * 0.7, taper * 0.25, abs(c.x));
+      float split = 0.78 + 0.22 * sin(c.y * 34.0 + vSeed * 19.0);
+      return max(spine, vane * split) * smoothstep(-1.0, -0.72, c.y);
     #endif
   }
 

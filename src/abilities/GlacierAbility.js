@@ -18,6 +18,7 @@ import { DecalType } from '../effects/GroundDecals.js';
 import { BurstMode } from '../effects/BurstSphere.js';
 import { LAYER } from '../core/Layers.js';
 import { frame } from '../core/FrameUniforms.js';
+import { qualityVisibleIndex } from '../core/Quality.js';
 import { settings } from '../config/settings.js';
 import { getColor } from '../utils/color.js';
 import { saturate, lerp, Easing, randRange } from '../utils/math.js';
@@ -626,11 +627,14 @@ export class GlacierAbility extends Ability {
     const g = settings.global;
     const birthFade = Math.max(0.02, c.birthFade);
     const used = [0, 0, 0];
+    let visibleIndex = 0;
 
     for (let i = 0; i < this._activeCount; i++) {
+      if (!qualityVisibleIndex(i, this._activeCount)) continue;
       const record = this.records[i];
-      const variant = i % VARIANTS;
-      const slot = (i / VARIANTS) | 0;
+      const variant = visibleIndex % VARIANTS;
+      const slot = (visibleIndex / VARIANTS) | 0;
+      visibleIndex++;
       const emerge = this._emergence(record, c);
 
       if (emerge < 0) {

@@ -33,6 +33,7 @@ import { Editor } from '../ui/Editor.js';
 import { settings, ELEMENTS } from '../config/settings.js';
 
 const HDR_URL = './hdri/spruit_sunrise.hdr';
+const WORLD_UP = new Vector3(0, 1, 0);
 
 /**
  * Application root: owns every subsystem and the frame loop.
@@ -122,6 +123,9 @@ export class App {
     this.selectAbility(ELEMENTS[0], { silent: true });
 
     this._focusPoint = new Vector3();
+    this._moveForward = new Vector3();
+    this._moveRight = new Vector3();
+    this._moveDirection = new Vector3();
   }
 
   /** The ability currently in the slot. */
@@ -151,10 +155,10 @@ export class App {
     this.hud.onAbility = (element) => this.armAbility(element);
   }
 
-  _handleAction(action, slot) {
+  _handleAction(action, abilityId) {
     switch (action) {
       case 'ability': {
-        const element = ELEMENTS[slot] ?? this.element;
+        const element = ELEMENTS.includes(abilityId) ? abilityId : this.element;
         // Pressing the *same* key again puts an armed cast away, as it does in a
         // MOBA; pressing a different one swaps the slot without disarming.
         if (this.aim.isArmed && element === this.element) this.aim.cancel();
@@ -231,6 +235,55 @@ export class App {
     this.flash.reset();
   }
 
+  /** Camera-relative WASD movement, with Shift selecting the run cycle. */
+  _updateMovement(dt) {
+    const strafe = Number(this.input.isDown('KeyD')) - Number(this.input.isDown('KeyA'));
+    const forward = Number(this.input.isDown('KeyW')) - Number(this.input.isDown('KeyS'));
+
+    if (strafe === 0 && forward === 0) {
+      this.character.setLocomotion('idle');
+      return;
+    }
+
+    const running = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight');
+    this.character.setLocomotion(running ? 'run' : 'walk');
+
+    this.camera.getWorldDirection(this._moveForward);
+    this._moveForward.y = 0;
+    if (this._moveForward.lengthSq() < 1e-6) this._moveForward.set(0, 0, -1);
+    else this._moveForward.normalize();
+
+    this._moveRight.crossVectors(this._moveForward, WORLD_UP).normalize();
+    this._moveDirection
+      .copy(this._moveForward)
+      .multiplyScalar(forward)
+      .addScaledVector(this._moveRight, strafe)
+      .normalize();
+
+    const c = settings.character;
+    this.character.position.addScaledVector(
+      this._moveDirection,
+      (running ? c.runSpeed : c.walkSpeed) * dt
+    );
+    this.character.position.x = MathUtils.clamp(
+      this.character.position.x,
+      -c.moveBoundary,
+      c.moveBoundary
+    );
+    this.character.position.z = MathUtils.clamp(
+      this.character.position.z,
+      -c.moveBoundary,
+      c.moveBoundary
+    );
+
+    // Aiming and casting own the heading. Otherwise face travel, including
+    // natural diagonal movement relative to the orbit camera.
+    if (!this.aim.isArmed && !this.character.isCasting) {
+      const yaw = Math.atan2(this._moveDirection.x, this._moveDirection.z);
+      this.character.turnToward(yaw, c.moveTurnRate, dt);
+    }
+  }
+
   /* ------------------------------------------------------------------ */
 
   /** Load assets, warm the shader cache, then start the loop. */
@@ -291,6 +344,8 @@ export class App {
 
     /* ---- simulation ---- */
     this.renderer.syncSettings();
+
+    this._updateMovement(dt);
 
     this.environment.setFocus(this.character.position.x, this.character.position.z);
     this.environment.update();

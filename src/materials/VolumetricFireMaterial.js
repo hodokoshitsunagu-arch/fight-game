@@ -11,6 +11,7 @@ import { noiseGLSL } from '../shaders/lib/noise.glsl.js';
 import { commonGLSL } from '../shaders/lib/common.glsl.js';
 import { sharedUniforms } from '../core/FrameUniforms.js';
 import { settings } from '../config/settings.js';
+import { qualitySamples } from '../core/Quality.js';
 import { getColor } from '../utils/color.js';
 
 /**
@@ -820,7 +821,7 @@ export class VolumetricFireMaterial extends ShaderMaterial {
     u.uCoreClarity.value = c.trailCoreClarity;
     u.uEmission.value = c.trailGlow * 2.4;
     u.uOpacity.value = c.trailOpacity * g.opacity;
-    u.uSteps.value = c.trailSteps;
+    u.uSteps.value = qualitySamples(c.trailSteps, 6);
     u.uTailFade.value = c.trailTailFade;
 
     // The palette is shared with the rock's seams and the detonation, so the

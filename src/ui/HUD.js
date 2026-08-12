@@ -1,4 +1,4 @@
-import { ELEMENTS, ELEMENT_META } from '../config/settings.js';
+import { ELEMENTS, ELEMENT_GROUPS, ELEMENT_META } from '../config/settings.js';
 import { ELEMENT_SIGILS } from './glyphs.js';
 
 /**
@@ -26,7 +26,7 @@ export class HUD {
     root.innerHTML = `
       <div class="hud__panel hud__title">
         Elemental Sandbox
-        <span data-blurb>Press Q, E, R, F, V or X, aim, click to cast.</span>
+        <span data-blurb>WASD to move, Shift to run. Press a skill key, aim, click to cast.</span>
       </div>
 
       <div class="hud__panel hud__stats">
@@ -37,11 +37,14 @@ export class HUD {
       </div>
 
       <div class="hud__panel hud__help">
+        <div><strong>1</strong> — Rift Sever &nbsp; <strong>2</strong> — Solar Phoenix</div>
+        <div><strong>3</strong> — Gravity Singularity &nbsp; <strong>4</strong> — Worldroot Bloom</div>
         <div><strong>Q</strong> — Frost Lance &nbsp; <strong>E</strong> — Storm Lance</div>
         <div><strong>R</strong> — Cinder Fall &nbsp; <strong>F</strong> — Nova Beam</div>
         <div><strong>V</strong> — Voltaic Snare &nbsp; <strong>X</strong> — Glacial Crown</div>
-        <div class="hud__help-note">V and X are far casts — aimed with a circle, not an arrow.</div>
-        <div><strong>Move</strong> — aim &nbsp; <strong>Left click</strong> — cast</div>
+        <div class="hud__help-note">3, 4, V and X are area casts — aimed with a circle.</div>
+        <div><strong>W A S D</strong> — move &nbsp; <strong>Shift</strong> — run</div>
+        <div><strong>Mouse</strong> — aim &nbsp; <strong>Left click</strong> — cast</div>
         <div><strong>Esc / right click</strong> — cancel the cast</div>
         <div><strong>Right drag</strong> — orbit &nbsp; <strong>Scroll</strong> — zoom</div>
         <div style="margin-top:6px">
@@ -52,16 +55,19 @@ export class HUD {
       </div>
 
       <div class="hud__abilities">
-        ${ELEMENTS.map((element) => {
-          const meta = ELEMENT_META[element];
-          return `
-            <div class="ability-card" data-element="${element}" style="--accent:${meta.accent}">
-              <div class="ability-card__sweep" data-sweep></div>
-              <div class="ability-card__key">${meta.key}</div>
-              <div class="ability-card__glyph">${ELEMENT_SIGILS[element] ?? ''}</div>
-              <div class="ability-card__label">${meta.label}</div>
-            </div>`;
-        }).join('')}
+        ${Object.values(ELEMENT_GROUPS).map((group) => `
+          <div class="hud__ability-row">
+            ${group.map((element) => {
+              const meta = ELEMENT_META[element];
+              return `
+                <div class="ability-card" data-element="${element}" style="--accent:${meta.accent}">
+                  <div class="ability-card__sweep" data-sweep></div>
+                  <div class="ability-card__key">${meta.key}</div>
+                  <div class="ability-card__glyph">${ELEMENT_SIGILS[element] ?? ''}</div>
+                  <div class="ability-card__label">${meta.label}</div>
+                </div>`;
+            }).join('')}
+          </div>`).join('')}
       </div>
 
       <div class="hud__toast" data-toast></div>

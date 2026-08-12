@@ -4,11 +4,19 @@ import { MeteorAbility } from './MeteorAbility.js';
 import { BeamAbility } from './BeamAbility.js';
 import { SnareAbility } from './SnareAbility.js';
 import { GlacierAbility } from './GlacierAbility.js';
+import { VoidAbility } from './VoidAbility.js';
+import { PhoenixAbility } from './PhoenixAbility.js';
+import { SingularityAbility } from './SingularityAbility.js';
+import { WorldTreeAbility } from './WorldTreeAbility.js';
 import { ELEMENTS } from '../config/settings.js';
 import { ObjectPool } from '../utils/ObjectPool.js';
 
 /** Registry: adding an ability means adding one line here. */
 const ABILITY_TYPES = {
+  void: VoidAbility,
+  phoenix: PhoenixAbility,
+  singularity: SingularityAbility,
+  worldtree: WorldTreeAbility,
   ice: IceAbility,
   thunder: ThunderAbility,
   meteor: MeteorAbility,

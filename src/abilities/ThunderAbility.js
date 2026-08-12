@@ -8,6 +8,7 @@ import { DecalType } from '../effects/GroundDecals.js';
 import { BurstMode } from '../effects/BurstSphere.js';
 import { LAYER } from '../core/Layers.js';
 import { frame } from '../core/FrameUniforms.js';
+import { qualityCount } from '../core/Quality.js';
 import { settings } from '../config/settings.js';
 import { getColor } from '../utils/color.js';
 import { saturate, lerp, Easing, randRange } from '../utils/math.js';
@@ -289,7 +290,7 @@ export class ThunderAbility extends Ability {
     state.fade = fade;
     state.seed = this._seed;
 
-    this._strandCount = Math.max(1, Math.min(MAX_STRANDS, Math.round(c.strands)));
+    this._strandCount = Math.min(MAX_STRANDS, qualityCount(c.strands, 'instances', 1));
     state.strands = this._strandCount;
     this.geometry.instanceCount = this._strandCount;
 

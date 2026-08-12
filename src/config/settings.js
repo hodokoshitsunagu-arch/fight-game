@@ -43,6 +43,7 @@ export const settings = {
   /* Global multipliers                                                  */
   /* ------------------------------------------------------------------ */
   global: {
+    quality: 'high', // high / medium / low runtime budget profile
     timeScale: 1.0, // slow-mo / fast forward for the whole simulation
     speed: 1.0, // eruption travel speed multiplier
     lifetime: 1.0, // ability lifetime multiplier
@@ -207,6 +208,13 @@ export const settings = {
   /* Character                                                           */
   /* ------------------------------------------------------------------ */
   character: {
+    /* --- camera-relative ground movement --- */
+    walkSpeed: 2.4, // metres per second
+    runSpeed: 5.5, // metres per second while Shift is held
+    moveTurnRate: 0.002, // fraction of the heading gap left after 1s
+    locomotionBlend: 0.18, // seconds between idle / walk / run clips
+    moveBoundary: 90, // keep the character inside the useful part of the floor
+
     /* --- blending the cast clip over the idle --- */
     // The idle loops forever; a cast clip is a one-shot laid over the top of it,
     // so these are the two edges of that overlap. In fast, out soft: the throw
@@ -220,6 +228,181 @@ export const settings = {
     castLean: 0.34, // radians the torso pitches forward on release
     castRecoil: 0.16, // metres the body is shoved back
     castSettle: 2.6 // seconds⁻¹ the lunge decays at
+  },
+
+  /* ================================================================== */
+  /* RIFT SEVER — ability one on the numeric row                        */
+  /* ================================================================== */
+  void: {
+    range: 16,
+    minRange: 3,
+    speed: 36,
+    cooldown: 0.8,
+    castAnim: 'cast2',
+    width: 0.18,
+    height: 3.8,
+    edgeWidth: 0.32,
+    openTime: 0.34,
+    holdTime: 1.25,
+    fadeTime: 0.72,
+    waviness: 0.42,
+    noiseScale: 2.4,
+    flowSpeed: 1.8,
+    distortion: 1.25,
+    shardCount: 34,
+    shardSize: 0.16,
+    shardSpin: 5.5,
+    moteRate: 170,
+    moteSize: 0.075,
+    moteSpeed: 2.8,
+    moteLifetime: 1.25,
+    mistRate: 70,
+    mistSize: 0.42,
+    mistLifetime: 1.6,
+    impactShake: 0.48,
+    impactFlash: 0.32,
+    lightIntensity: 11,
+    lightRadius: 10,
+    lightColor: '#8d5cff',
+    colorCore: '#03010a',
+    colorInner: '#b772ff',
+    colorEdge: '#55efff',
+    colorShard: '#d8b8ff',
+    colorMist: '#321451'
+  },
+
+  /* ================================================================== */
+  /* SOLAR PHOENIX — ability two on the numeric row                     */
+  /* ================================================================== */
+  phoenix: {
+    range: 18,
+    minRange: 4,
+    speed: 15,
+    cooldown: 1.8,
+    castAnim: 'cast1',
+    charge: 0.3,
+    bodyLength: 2.1,
+    bodyWidth: 0.42,
+    wingSpan: 5.8,
+    wingDepth: 1.55,
+    flapSpeed: 7.2,
+    flapAmount: 0.55,
+    flightHeight: 1.35,
+    featherCount: 42,
+    tailLength: 4.6,
+    tailWidth: 0.22,
+    trailOpacity: 0.78,
+    distortion: 0.9,
+    emberRate: 210,
+    emberSize: 0.07,
+    emberSpeed: 2.4,
+    emberLifetime: 1.35,
+    smokeRate: 48,
+    smokeSize: 0.38,
+    smokeLifetime: 1.45,
+    featherRate: 38,
+    featherSize: 0.28,
+    featherLifetime: 2.1,
+    impactRadius: 5.4,
+    impactShake: 0.72,
+    impactFlash: 0.62,
+    lightIntensity: 18,
+    lightRadius: 14,
+    lightColor: '#ffb12e',
+    colorCore: '#fffbe8',
+    colorWing: '#ffbe31',
+    colorEdge: '#ff4b16',
+    colorTail: '#b90d09',
+    colorSmoke: '#42120b'
+  },
+
+  /* ================================================================== */
+  /* GRAVITY SINGULARITY — ability three on the numeric row             */
+  /* ================================================================== */
+  singularity: {
+    range: 17,
+    minRange: 3,
+    zoneRadius: 4.8,
+    speed: 22,
+    cooldown: 2,
+    castAnim: 'cast3',
+    coreRadius: 0.72,
+    coreHeight: 1.55,
+    diskRadius: 4.1,
+    diskWidth: 0.54,
+    diskTilt: 0.22,
+    diskSpeed: 2.8,
+    holdTime: 2.35,
+    collapseTime: 0.32,
+    fadeTime: 0.8,
+    distortion: 1.7,
+    orbitCount: 52,
+    orbitSpeed: 1.9,
+    debrisSize: 0.15,
+    moteRate: 250,
+    moteSize: 0.065,
+    moteSpeed: 1.4,
+    moteLifetime: 2.1,
+    smokeRate: 75,
+    smokeSize: 0.55,
+    smokeLifetime: 2.3,
+    impactShake: 0.95,
+    impactFlash: 0.78,
+    lightIntensity: 15,
+    lightRadius: 13,
+    lightColor: '#a971ff',
+    colorCore: '#000006',
+    colorDiskA: '#f6d4ff',
+    colorDiskB: '#9c4fff',
+    colorDiskC: '#351080',
+    colorMote: '#c29aff'
+  },
+
+  /* ================================================================== */
+  /* WORLDROOT BLOOM — ability four on the numeric row                  */
+  /* ================================================================== */
+  worldtree: {
+    range: 16,
+    minRange: 2,
+    zoneRadius: 5.2,
+    speed: 24,
+    cooldown: 2.4,
+    castAnim: 'cast3',
+    rootCount: 18,
+    rootReach: 1.05,
+    rootWidth: 0.16,
+    rootWander: 0.7,
+    growTime: 1.1,
+    holdTime: 1.65,
+    fadeTime: 1.1,
+    treeHeight: 6.4,
+    trunkRadius: 0.62,
+    branchCount: 54,
+    branchSpread: 3.5,
+    branchTwist: 1.4,
+    leafCount: 190,
+    leafSize: 0.19,
+    leafGlow: 0.82,
+    leafRate: 58,
+    leafLifetime: 2.4,
+    pollenRate: 145,
+    pollenSize: 0.055,
+    pollenSpeed: 0.75,
+    pollenLifetime: 2.8,
+    seedRate: 46,
+    seedLifetime: 2.6,
+    groundGlow: 0.72,
+    distortion: 0.28,
+    impactShake: 0.42,
+    impactFlash: 0.3,
+    lightIntensity: 13,
+    lightRadius: 15,
+    lightColor: '#80ff9f',
+    colorBark: '#163c24',
+    colorSap: '#73ff9c',
+    colorLeaf: '#2fcf6b',
+    colorGold: '#ffd978',
+    colorBloom: '#f4fff1'
   },
 
   /* ================================================================== */
@@ -1823,11 +2006,16 @@ export const CastShape = Object.freeze({
 /**
  * Ability ids, in slot order.
  *
- * `AbilityManager`, the HUD, the aim controller and the editor all key off this
- * array, and the index is the slot the keyboard binds to — adding a third
- * ability is a new file, an entry here and a settings block above.
+ * `AbilityManager`, the HUD, the aim controller and the editor all use these
+ * stable ids. Keyboard bindings also emit ids directly, so changing visual row
+ * order never changes which skill a key selects.
  */
-export const ELEMENTS = ['ice', 'thunder', 'meteor', 'beam', 'snare', 'glacier'];
+export const ELEMENT_GROUPS = Object.freeze({
+  numeric: Object.freeze(['void', 'phoenix', 'singularity', 'worldtree']),
+  classic: Object.freeze(['ice', 'thunder', 'meteor', 'beam', 'snare', 'glacier'])
+});
+
+export const ELEMENTS = [...ELEMENT_GROUPS.numeric, ...ELEMENT_GROUPS.classic];
 
 /**
  * Registry metadata: how an ability is presented, and how it is aimed.
@@ -1836,6 +2024,22 @@ export const ELEMENTS = ['ice', 'thunder', 'meteor', 'beam', 'snare', 'glacier']
  * between the arrow and the circle; omit it and the ability is a line cast.
  */
 export const ELEMENT_META = {
+  void: { label: 'Rift Sever', accent: '#a66cff', key: '1', hint: 'Rift Sever' },
+  phoenix: { label: 'Solar Phoenix', accent: '#ff9f2f', key: '2', hint: 'Solar Phoenix' },
+  singularity: {
+    label: 'Gravity Singularity',
+    accent: '#bd75ff',
+    key: '3',
+    hint: 'Gravity Singularity',
+    cast: CastShape.ZONE
+  },
+  worldtree: {
+    label: 'Worldroot Bloom',
+    accent: '#66e58a',
+    key: '4',
+    hint: 'Worldroot Bloom',
+    cast: CastShape.ZONE
+  },
   ice: { label: 'Frost Lance', accent: '#5fd0ff', key: 'Q', hint: 'Frost Lance' },
   thunder: { label: 'Storm Lance', accent: '#7fb4ff', key: 'E', hint: 'Storm Lance' },
   meteor: { label: 'Cinder Fall', accent: '#ff8a3c', key: 'R', hint: 'Cinder Fall' },

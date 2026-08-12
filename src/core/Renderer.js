@@ -5,6 +5,7 @@ import {
   SRGBColorSpace
 } from 'three';
 import { settings } from '../config/settings.js';
+import { qualityProfile } from './Quality.js';
 
 /**
  * Thin wrapper around WebGLRenderer that owns canvas sizing, pixel-ratio
@@ -44,7 +45,7 @@ export class Renderer {
 
   /** Cap the pixel ratio: 4K + heavy transparency is not worth the fill rate. */
   targetPixelRatio() {
-    return Math.min(window.devicePixelRatio || 1, 1.75);
+    return Math.min(window.devicePixelRatio || 1, qualityProfile().pixelRatio);
   }
 
   get domElement() {
@@ -71,6 +72,8 @@ export class Renderer {
   /** Called once per frame before rendering so the editor can drive exposure. */
   syncSettings() {
     this.gl.toneMappingExposure = settings.post.exposure;
+    const wanted = this.targetPixelRatio();
+    if (Math.abs(wanted - this.gl.getPixelRatio()) > 0.001) this.handleResize();
   }
 
   dispose() {

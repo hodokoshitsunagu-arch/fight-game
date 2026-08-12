@@ -1,6 +1,7 @@
 import GUI from 'lil-gui';
 import { settings, CAST_ANIMATIONS } from '../config/settings.js';
 import { PresetManager } from './PresetManager.js';
+import { buildShowcaseEditors } from './ShowcaseEditors.js';
 
 /**
  * Real-time VFX editor.
@@ -34,6 +35,7 @@ export class Editor {
     this._buildGlobal();
     this._buildAim();
     this._buildZone();
+    buildShowcaseEditors(this.gui);
     this._buildIce();
     this._buildThunder();
     this._buildMeteor();
@@ -221,6 +223,7 @@ export class Editor {
     const g = settings.global;
     const R = Editor.range;
 
+    folder.add(g, 'quality', ['high', 'medium', 'low']).name('quality');
     R(folder, g, 'timeScale', 0.02, 2, 0.01, 'time scale');
     R(folder, g, 'speed', 0.1, 4, 0.01, 'cast speed');
     R(folder, g, 'lifetime', 0.1, 4, 0.01, 'lifetime');
@@ -1661,6 +1664,13 @@ export class Editor {
     // The same value as Global → animation speed, mirrored here where it is
     // actually reached for; `listen` keeps the two readouts honest.
     R(folder, settings.global, 'animationSpeed', 0.1, 3, 0.01, 'playback rate').listen();
+
+    const movement = folder.addFolder('Movement');
+    R(movement, c, 'walkSpeed', 0.1, 8, 0.05, 'walk speed');
+    R(movement, c, 'runSpeed', 0.5, 14, 0.05, 'run speed');
+    R(movement, c, 'moveTurnRate', 0.000001, 0.2, 0.000001, 'turn follow');
+    R(movement, c, 'locomotionBlend', 0.01, 0.8, 0.01, 'animation blend');
+    R(movement, c, 'moveBoundary', 10, 190, 1, 'floor boundary');
 
     // Which clip each ability throws lives in that ability's own folder, under
     // "The cast"; these are the edges of the blend that lays it over the idle.

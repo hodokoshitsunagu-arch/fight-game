@@ -1,5 +1,6 @@
 import { ParticleSystem } from './ParticleSystem.js';
 import { settings } from '../config/settings.js';
+import { frame } from '../core/FrameUniforms.js';
 
 /**
  * Owns every particle system in the app.
@@ -32,7 +33,7 @@ export class ParticleEngine {
 
   /** Upload the frame's spawn data. Called once, after all abilities update. */
   flush() {
-    for (const system of this.systems.values()) system.flush();
+    for (const system of this.systems.values()) system.flush(frame.uTime.value);
   }
 
   /**
