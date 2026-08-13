@@ -132,6 +132,19 @@ const GLACIER = WRAP(`
   <path d="M79 66L87 41L91 70"/>
 `);
 
+const REPULSE = WRAP(`
+  <circle cx="50" cy="50" r="12"/>
+  <circle cx="50" cy="50" r="27" stroke-dasharray="9 7"/>
+  <path d="M50 3V23M50 77V97M3 50H23M77 50H97"/>
+  <path d="M16 16L30 30M70 70L84 84M84 16L70 30M30 70L16 84"/>
+`);
+
+const HEAL = WRAP(`
+  <path d="M50 14V86M14 50H86" stroke-width="13"/>
+  <circle cx="50" cy="50" r="39" stroke-dasharray="4 10"/>
+  <path d="M25 77C36 68 64 68 75 77M25 23C36 32 64 32 75 23"/>
+`);
+
 /** Keyed by the ids in `ELEMENTS`. */
 export const ELEMENT_SIGILS = {
   void: VOID,
@@ -145,3 +158,8 @@ export const ELEMENT_SIGILS = {
   snare: SNARE,
   glacier: GLACIER
 };
+
+export const SELF_ABILITY_SIGILS = Object.freeze({
+  repulse: REPULSE,
+  heal: HEAL
+});

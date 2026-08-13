@@ -227,7 +227,56 @@ export const settings = {
     turnRate: 0.0002, // fraction of the heading gap left after 1s (lower = snappier)
     castLean: 0.34, // radians the torso pitches forward on release
     castRecoil: 0.16, // metres the body is shoved back
-    castSettle: 2.6 // seconds⁻¹ the lunge decays at
+    castSettle: 2.6, // seconds⁻¹ the lunge decays at
+
+    /* --- Zombie hit reaction --- */
+    hitReactionInvulnerability: 0.7, // global crowd-hit gate, seconds
+    hitReactionSpeed: 1.25,
+    hitReactionBlendIn: 0.08,
+    hitReactionBlendOut: 0.22,
+    hitOverlayDecay: 7.5
+  },
+
+  /* ------------------------------------------------------------------ */
+  /* Zombie horde                                                       */
+  /* ------------------------------------------------------------------ */
+  enemy: {
+    enabled: true,
+    maxAlive: 100,
+    prewarm: 100,
+    initialHorde: 36,
+    spawnRate: 8,
+    spawnBatch: 10,
+    minSpawnRadius: 22,
+    maxSpawnRadius: 34,
+    moveSpeed: 1.35,
+    hp: 100,
+    hitRadius: 0.55,
+    separationRadius: 0.85,
+    attackRange: 1.35,
+    attackExit: 1.7,
+    attackHitRange: 1.55,
+    attackContactPhase: 0.4,
+    aiRate: 15,
+    hitFlashDuration: 0.085,
+    corpseDuration: 2,
+    impulseDamping: 4.8,
+    knockbackMultiplier: 1
+  },
+
+  /* ------------------------------------------------------------------ */
+  /* Instant self abilities (5 / 6)                                     */
+  /* ------------------------------------------------------------------ */
+  selfAbilities: {
+    repulseRadius: 10,
+    repulseDamage: 45,
+    repulseForce: 21,
+    repulseCooldown: 4.5,
+    repulseProtection: 0.75,
+    healAmount: 180,
+    healCooldown: 6,
+    healProtection: 1.1,
+    healDuration: 1.15
   },
 
   /* ================================================================== */
@@ -2024,41 +2073,74 @@ export const ELEMENTS = [...ELEMENT_GROUPS.numeric, ...ELEMENT_GROUPS.classic];
  * between the arrow and the circle; omit it and the ability is a line cast.
  */
 export const ELEMENT_META = {
-  void: { label: 'Rift Sever', accent: '#a66cff', key: '1', hint: 'Rift Sever' },
-  phoenix: { label: 'Solar Phoenix', accent: '#ff9f2f', key: '2', hint: 'Solar Phoenix' },
+  void: {
+    label: 'Rift Sever', zhLabel: '裂隙斩', description: 'Linear dimensional cleave',
+    zhDescription: '直线空间斩击', accent: '#a66cff', key: '1', hint: 'Rift Sever'
+  },
+  phoenix: {
+    label: 'Solar Phoenix', zhLabel: '太阳凤凰', description: 'Explosive phoenix strike',
+    zhDescription: '凤凰爆炸冲击', accent: '#ff9f2f', key: '2', hint: 'Solar Phoenix'
+  },
   singularity: {
-    label: 'Gravity Singularity',
+    label: 'Gravity Singularity', zhLabel: '引力奇点',
+    description: 'Sustained gravity pull', zhDescription: '持续引力牵引',
     accent: '#bd75ff',
     key: '3',
     hint: 'Gravity Singularity',
     cast: CastShape.ZONE
   },
   worldtree: {
-    label: 'Worldroot Bloom',
+    label: 'Worldroot Bloom', zhLabel: '世界树绽放',
+    description: 'Rooting nature burst', zhDescription: '自然爆发定身',
     accent: '#66e58a',
     key: '4',
     hint: 'Worldroot Bloom',
     cast: CastShape.ZONE
   },
-  ice: { label: 'Frost Lance', accent: '#5fd0ff', key: 'Q', hint: 'Frost Lance' },
-  thunder: { label: 'Storm Lance', accent: '#7fb4ff', key: 'E', hint: 'Storm Lance' },
-  meteor: { label: 'Cinder Fall', accent: '#ff8a3c', key: 'R', hint: 'Cinder Fall' },
-  beam: { label: 'Nova Beam', accent: '#7ff0ff', key: 'F', hint: 'Nova Beam' },
+  ice: {
+    label: 'Frost Lance', zhLabel: '冰霜长枪', description: 'Freezing cone lance',
+    zhDescription: '锥形冻结长枪', accent: '#5fd0ff', key: 'Q', hint: 'Frost Lance'
+  },
+  thunder: {
+    label: 'Storm Lance', zhLabel: '雷霆长枪', description: 'Staggering lightning lance',
+    zhDescription: '雷击硬直长枪', accent: '#7fb4ff', key: 'E', hint: 'Storm Lance'
+  },
+  meteor: {
+    label: 'Cinder Fall', zhLabel: '烬火天降', description: 'Heavy meteor impact',
+    zhDescription: '强力陨石冲击', accent: '#ff8a3c', key: 'R', hint: 'Cinder Fall'
+  },
+  beam: {
+    label: 'Nova Beam', zhLabel: '新星光束', description: 'Sustained energy beam',
+    zhDescription: '持续能量光束', accent: '#7ff0ff', key: 'F', hint: 'Nova Beam'
+  },
   snare: {
-    label: 'Voltaic Snare',
+    label: 'Voltaic Snare', zhLabel: '伏特陷阱',
+    description: 'Slowing electric field', zhDescription: '减速电流力场',
     accent: '#a98bff',
     key: 'V',
     hint: 'Voltaic Snare',
     cast: CastShape.ZONE
   },
   glacier: {
-    label: 'Glacial Crown',
+    label: 'Glacial Crown', zhLabel: '冰川王冠',
+    description: 'Freezing crown eruption', zhDescription: '冰冠冻结爆发',
     accent: '#8ee8ff',
     key: 'X',
     hint: 'Glacial Crown',
     cast: CastShape.ZONE
   }
 };
+
+export const SELF_ABILITY_META = Object.freeze({
+  repulse: {
+    label: 'Force Repulse', zhLabel: '力场震退', description: 'Launch nearby enemies',
+    zhDescription: '弹飞附近敌人', accent: '#78e8ff', key: '5', hint: 'Force Repulse'
+  },
+  heal: {
+    label: 'Verdant Heal', zhLabel: '翠绿治愈', description: 'Simulated health recovery',
+    zhDescription: '模拟生命恢复', accent: '#70ff9b', key: '6', hint: 'Verdant Heal'
+  }
+});
 
 /** How the given ability is aimed. Line unless its metadata says otherwise. */
 export function castShapeOf(element) {

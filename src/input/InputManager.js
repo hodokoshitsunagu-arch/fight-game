@@ -83,6 +83,12 @@ export class InputManager extends EventEmitter {
       case 'Digit4':
         this.emit('action', 'ability', 'worldtree');
         break;
+      case 'Digit5':
+        this.emit('action', 'selfAbility', 'repulse');
+        break;
+      case 'Digit6':
+        this.emit('action', 'selfAbility', 'heal');
+        break;
       case 'KeyQ':
         this.emit('action', 'ability', 'ice');
         break;
@@ -115,6 +121,9 @@ export class InputManager extends EventEmitter {
         break;
       case 'KeyP':
         this.emit('action', 'togglePause');
+        break;
+      case 'KeyB':
+        this.emit('action', 'spawnHorde');
         break;
       default:
         break;

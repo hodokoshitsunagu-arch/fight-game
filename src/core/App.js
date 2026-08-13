@@ -25,9 +25,14 @@ import { CameraShake } from '../effects/CameraShake.js';
 import { ScreenFlash } from '../effects/ScreenFlash.js';
 
 import { AbilityManager } from '../abilities/AbilityManager.js';
+import { EnemyManager } from '../enemies/EnemyManager.js';
+import { CombatSystem } from '../gameplay/CombatSystem.js';
+import { PlayerHitFeedback } from '../gameplay/PlayerHitFeedback.js';
+import { SelfAbilitySystem } from '../gameplay/SelfAbilitySystem.js';
 import { PostProcessing } from '../postprocessing/PostProcessing.js';
 
 import { HUD, LoadingScreen } from '../ui/HUD.js';
+import { DamageNumbers } from '../ui/DamageNumbers.js';
 import { Editor } from '../ui/Editor.js';
 
 import { settings, ELEMENTS } from '../config/settings.js';
@@ -53,6 +58,7 @@ export class App {
     this.time = new Time();
     this.elapsed = 0;
     this.paused = false;
+    this.hitStopRemaining = 0;
     this._raf = 0;
 
     /**
@@ -60,6 +66,7 @@ export class App {
      * spending one slot never locks the other out.
      */
     this.cooldowns = new Map(ELEMENTS.map((element) => [element, 0]));
+    this.selfCooldowns = new Map([['repulse', 0], ['heal', 0]]);
 
     /* ---- core ---- */
     this.renderer = new Renderer(canvas);
@@ -86,6 +93,16 @@ export class App {
     this.shake = new CameraShake(this.rig);
     this.flash = new ScreenFlash();
 
+    /* ---- enemies & gameplay ---- */
+    this.enemies = new EnemyManager(this.scene, this.camera, this.environment);
+    this.damageNumbers = new DamageNumbers(this.camera);
+    this.combat = new CombatSystem(this.enemies, this.particles, {
+      damageNumbers: this.damageNumbers,
+      requestHitStop: (duration) => {
+        this.hitStopRemaining = Math.min(0.05, Math.max(this.hitStopRemaining, duration));
+      }
+    });
+
     this.abilities = new AbilityManager({
       scene: this.scene,
       camera: this.camera,
@@ -96,12 +113,29 @@ export class App {
       fissures: this.fissures,
       bursts: this.bursts,
       shake: this.shake,
-      flash: this.flash
+      flash: this.flash,
+      combat: this.combat
     });
 
     /* ---- character ---- */
     this.character = new CharacterController(this.environment);
     this.scene.add(this.character.root);
+    this.playerHitFeedback = new PlayerHitFeedback(this.character, {
+      flash: this.flash,
+      shake: this.shake,
+      damageNumbers: this.damageNumbers
+    });
+    this.selfAbilities = new SelfAbilitySystem(this.character, this.enemies, {
+      particles: this.particles,
+      bursts: this.bursts,
+      decals: this.decals,
+      shake: this.shake,
+      flash: this.flash,
+      damageNumbers: this.damageNumbers,
+      requestHitStop: (duration) => {
+        this.hitStopRemaining = Math.min(0.05, Math.max(this.hitStopRemaining, duration));
+      }
+    });
 
     /* ---- input & targeting ---- */
     this.input = new InputManager(canvas);
@@ -116,6 +150,8 @@ export class App {
     this.hud = new HUD(document.getElementById('hud'));
     this.editor = new Editor({
       onClear: () => this.clearEffects(),
+      onSpawnHorde: (count) => this.spawnHorde(count),
+      onClearEnemies: () => this.clearEnemies(),
       onToast: (message) => this.hud.showToast(message)
     });
 
@@ -151,8 +187,12 @@ export class App {
 
     this.aim.on('cast', (origin, direction, distance) => this._cast(origin, direction, distance));
     this.aim.on('reject', () => this.hud.showToast('Too close — aim further out'));
+    this._offEnemyAttack = this.enemies.on('enemy:attack', (enemy) => {
+      this.playerHitFeedback.tryHit(enemy);
+    });
 
     this.hud.onAbility = (element) => this.armAbility(element);
+    this.hud.onSelfAbility = (id) => this.castSelfAbility(id);
   }
 
   _handleAction(action, abilityId) {
@@ -165,6 +205,9 @@ export class App {
         else this.armAbility(element);
         break;
       }
+      case 'selfAbility':
+        this.castSelfAbility(abilityId);
+        break;
       case 'cancel':
         this.aim.cancel();
         break;
@@ -182,6 +225,9 @@ export class App {
         this.paused = !this.paused;
         this.hud.setPaused(this.paused);
         this.hud.showToast(this.paused ? 'Paused — the editor still applies' : 'Resumed');
+        break;
+      case 'spawnHorde':
+        this.spawnHorde(50);
         break;
       default:
         break;
@@ -223,6 +269,31 @@ export class App {
     this.character.castLunge();
   }
 
+  castSelfAbility(id) {
+    if (!this.selfCooldowns.has(id)) return;
+    if ((this.selfCooldowns.get(id) ?? 0) > 0) {
+      this.hud.showToast('Ability not ready');
+      return;
+    }
+    this.aim.cancel();
+    const result = this.selfAbilities.cast(id);
+    if (!result) {
+      this.hud.showToast('Recovering — try again');
+      return;
+    }
+
+    const c = settings.selfAbilities;
+    this.selfCooldowns.set(id, id === 'repulse' ? c.repulseCooldown : c.healCooldown);
+    this.playerHitFeedback.grantImmunity(
+      id === 'repulse' ? c.repulseProtection : c.healProtection
+    );
+    this.hud.showToast(
+      id === 'repulse'
+        ? `Force Repulse — ${result.affected} launched\n力场震退 — 弹飞 ${result.affected} 个敌人`
+        : `Verdant Heal +${result.amount}\n翠绿治愈 +${result.amount}`
+    );
+  }
+
   clearEffects() {
     this.aim.cancel();
     this.abilities.clear();
@@ -233,6 +304,19 @@ export class App {
     this.lights.reset();
     this.shake.reset();
     this.flash.reset();
+    this.playerHitFeedback.reset();
+    this.selfAbilities.clear();
+  }
+
+  spawnHorde(count) {
+    this.enemies.spawnHorde(count);
+    this.hud.showToast(`Spawning ${count} Zombies`);
+  }
+
+  clearEnemies() {
+    this.enemies.clearEnemies({ resetKills: true });
+    this.damageNumbers.clear();
+    this.hud.showToast('Enemies cleared');
   }
 
   /** Camera-relative WASD movement, with Shift selecting the run cycle. */
@@ -278,7 +362,7 @@ export class App {
 
     // Aiming and casting own the heading. Otherwise face travel, including
     // natural diagonal movement relative to the orbit camera.
-    if (!this.aim.isArmed && !this.character.isCasting) {
+    if (!this.aim.isArmed && !this.character.isCasting && !this.character.isReacting) {
       const yaw = Math.atan2(this._moveDirection.x, this._moveDirection.z);
       this.character.turnToward(yaw, c.moveTurnRate, dt);
     }
@@ -301,9 +385,18 @@ export class App {
     this.loading.setProgress(0.5, 'Loading character…');
     await this.character.load(assets);
 
-    this.loading.setProgress(0.85, 'Compiling shaders…');
+    this.loading.setProgress(0.66, 'Raising the horde…');
+    this.enemies.setTarget(this.character.position);
+    await this.enemies.load(assets, (message) => this.loading.setProgress(0.72, message));
+
+    this.loading.setProgress(0.9, 'Compiling shaders…');
     // Compile everything up front so the first cast never stutters.
-    await this.renderer.gl.compileAsync(this.scene, this.camera);
+    this.enemies.setCompileVisible(true);
+    try {
+      await this.renderer.gl.compileAsync(this.scene, this.camera);
+    } finally {
+      this.enemies.setCompileVisible(false);
+    }
 
     this.loading.setProgress(1, 'Ready');
     this.loading.hide();
@@ -331,7 +424,9 @@ export class App {
     gl.info.reset();
 
     const raw = this.time.tick();
-    const dt = this.paused ? 0 : raw * settings.global.timeScale;
+    const hitStopped = this.hitStopRemaining > 0;
+    this.hitStopRemaining = Math.max(0, this.hitStopRemaining - raw);
+    const dt = this.paused || hitStopped ? 0 : raw * settings.global.timeScale;
     this.elapsed += dt;
 
     /* ---- shared uniforms ---- */
@@ -363,11 +458,17 @@ export class App {
     for (const [element, remaining] of this.cooldowns) {
       if (remaining > 0) this.cooldowns.set(element, Math.max(0, remaining - raw));
     }
+    for (const [id, remaining] of this.selfCooldowns) {
+      if (remaining > 0) this.selfCooldowns.set(id, Math.max(0, remaining - raw));
+    }
 
     this.ground.update(this.elapsed);
     this.dust.update(this.elapsed, this.character.position);
 
+    this.enemies.update(dt, raw);
+    this.combat.update(dt);
     this.abilities.update(dt);
+    this.selfAbilities.update(dt);
     this.particles.flush();
     this.decals.update(dt);
     this.fissures.update(dt);
@@ -380,6 +481,7 @@ export class App {
     this.rig.setAnchor(this.character.position.x, 0, this.character.position.z);
     this.shake.update(raw);
     this.flash.update(raw);
+    this.playerHitFeedback.update(raw);
     this.rig.update(raw);
 
     this.contactShadows.setPosition(this.character.position.x, this.character.position.z);
@@ -395,13 +497,26 @@ export class App {
     for (const element of ELEMENTS) {
       this.hud.setCooldown(element, this.cooldowns.get(element) ?? 0, settings[element].cooldown);
     }
+    this.hud.setSelfCooldown(
+      'repulse',
+      this.selfCooldowns.get('repulse') ?? 0,
+      settings.selfAbilities.repulseCooldown
+    );
+    this.hud.setSelfCooldown(
+      'heal',
+      this.selfCooldowns.get('heal') ?? 0,
+      settings.selfAbilities.healCooldown
+    );
     this.hud.setArmed(this.aim.isArmed);
     this.hud.update(raw, () => ({
       particles: this.particles.countLive(this.elapsed),
       calls: gl.info.render.calls,
       spikes: this.abilities.active.reduce((total, ability) => total + ability.instanceCount, 0),
-      abilities: this.abilities.active.length
+      abilities: this.abilities.active.length,
+      enemies: this.enemies.aliveCount,
+      kills: this.enemies.kills
     }));
+    this.damageNumbers.update(raw);
   }
 
   /* ------------------------------------------------------------------ */
@@ -411,6 +526,12 @@ export class App {
     this.input.dispose();
     this.aim.dispose();
     this.abilities.dispose();
+    this.combat.dispose();
+    this.selfAbilities.dispose();
+    this._offEnemyAttack?.();
+    this.playerHitFeedback.dispose();
+    this.enemies.dispose();
+    this.damageNumbers.dispose();
     this.particles.dispose();
     this.decals.dispose();
     this.fissures.dispose();

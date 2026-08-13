@@ -46,6 +46,7 @@ export class Editor {
     this._buildPost();
     this._buildCamera();
     this._buildCharacter();
+    this._buildEnemies();
 
     // Everything starts collapsed, top-level folders included. There are enough
     // controls here that any folder left open pushes the rest off the screen,
@@ -1686,6 +1687,24 @@ export class Editor {
     R(lunge, c, 'castLean', 0, 1.2, 0.01, 'lunge lean');
     R(lunge, c, 'castRecoil', 0, 0.8, 0.005, 'lunge recoil');
     R(lunge, c, 'castSettle', 0.2, 8, 0.05, 'lunge settle');
+  }
+
+  _buildEnemies() {
+    const folder = this.gui.addFolder('Zombie horde');
+    const c = settings.enemy;
+    const R = Editor.range;
+    folder.add(c, 'enabled').name('enabled');
+    folder.add(c, 'maxAlive', [25, 50, 100, 200, 300, 500]).name('max alive');
+    R(folder, c, 'spawnRate', 0, 60, 1, 'spawn / second');
+    R(folder, c, 'moveSpeed', 0.2, 4, 0.05, 'move speed');
+    R(folder, c, 'hp', 10, 500, 5, 'HP');
+    R(folder, c, 'separationRadius', 0.2, 2, 0.05, 'separation');
+    R(folder, c, 'hitFlashDuration', 0.02, 0.2, 0.005, 'hit flash');
+    R(folder, c, 'corpseDuration', 0.5, 4, 0.05, 'corpse life');
+    R(folder, c, 'knockbackMultiplier', 0, 3, 0.05, 'knockback');
+    folder.add({ spawn50: () => this.hooks.onSpawnHorde?.(50) }, 'spawn50').name('Spawn 50');
+    folder.add({ spawn100: () => this.hooks.onSpawnHorde?.(100) }, 'spawn100').name('Spawn 100');
+    folder.add({ clear: () => this.hooks.onClearEnemies?.() }, 'clear').name('Clear enemies');
   }
 
   dispose() {

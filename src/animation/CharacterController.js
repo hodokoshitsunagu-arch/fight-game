@@ -21,6 +21,7 @@ const LOCOMOTION_FILES = {
   walk: './models/Walking.fbx',
   run: './models/Running.fbx'
 };
+const HIT_REACTION_URL = './models/Standing React Small From Front.fbx';
 /** One file per entry in `CAST_ANIMATIONS`; only their clips are kept. */
 const castUrl = (name) => `./models/${name}.fbx`;
 /** Mixamo exports in centimetres. */
@@ -66,6 +67,9 @@ export class CharacterController {
     this.casts = new Map();
     /** The cast currently being thrown, null while idling. */
     this._cast = null;
+    /** A high-priority one-shot which cannot be restarted while it is playing. */
+    this.hitReaction = null;
+    this._reaction = null;
     this.height = 1.8;
     this.headPosition = new Vector3(0, 1.5, 0);
     /** The rig's own forward, in model space — the axis a bank rotates about. */
@@ -93,10 +97,15 @@ export class CharacterController {
       assets.loadFBX(CHARACTER_URL),
       assets.loadTexture(CHARACTER_TEXTURE_URL),
       ...locomotionEntries.map(([, url]) => assets.loadFBX(url)),
-      ...CAST_ANIMATIONS.map((name) => assets.loadFBX(castUrl(name)))
+      ...CAST_ANIMATIONS.map((name) => assets.loadFBX(castUrl(name))),
+      assets.loadFBX(HIT_REACTION_URL)
     ]);
     const locomotionFiles = animationFiles.slice(0, locomotionEntries.length);
-    const castFiles = animationFiles.slice(locomotionEntries.length);
+    const castFiles = animationFiles.slice(
+      locomotionEntries.length,
+      locomotionEntries.length + CAST_ANIMATIONS.length
+    );
+    const hitReactionFile = animationFiles.at(-1);
     // The FBX resolves before its textures do; material prep inspects them.
     await assets.settled();
 
@@ -127,7 +136,7 @@ export class CharacterController {
     this.headPosition.set(0, size.y * 0.86, 0);
 
     this.mixer = new AnimationMixer(fbx);
-    this.mixer.addEventListener('finished', this._onCastFinished);
+    this.mixer.addEventListener('finished', this._onActionFinished);
 
     // The breath ships inside the character file itself.
     const idleClip = (fbx.animations ?? [])[0];
@@ -148,6 +157,7 @@ export class CharacterController {
       this._registerLocomotion(name, locomotionFiles[index], bones)
     );
     CAST_ANIMATIONS.forEach((name, index) => this._registerCast(name, castFiles[index], bones));
+    this._registerHitReaction(hitReactionFile, bones);
 
     return this;
   }
@@ -208,6 +218,30 @@ export class CharacterController {
     action.clampWhenFinished = true;
     this.casts.set(name, action);
 
+    disposeObject(file);
+  }
+
+  /** Keep the imported reaction clip only; its duplicate Zombie mesh is discarded. */
+  _registerHitReaction(file, bones) {
+    const source = (file?.animations ?? [])[0];
+    if (!source) {
+      console.warn('[CharacterController] hit reaction carries no animation');
+      disposeObject(file);
+      return;
+    }
+
+    const clip = source.clone();
+    clip.tracks = clip.tracks.filter((track) => bones.has(track.name.split('.')[0]));
+    if (clip.tracks.length === 0) {
+      console.warn('[CharacterController] hit reaction does not match this skeleton');
+      disposeObject(file);
+      return;
+    }
+
+    clip.name = 'hitReaction';
+    this.hitReaction = this.mixer.clipAction(clip);
+    this.hitReaction.setLoop(LoopOnce, 1);
+    this.hitReaction.clampWhenFinished = true;
     disposeObject(file);
   }
 
@@ -315,11 +349,13 @@ export class CharacterController {
    * @param {string} [name] an id from `CAST_ANIMATIONS`; falls back to the first
    *   one so an ability configured with a clip that failed to load still moves.
    */
-  playCast(name) {
+  playCast(name, { interruptReaction = false } = {}) {
+    if (this.isReacting && !interruptReaction) return false;
     const next = this.casts.get(name) ?? this.casts.get(CAST_ANIMATIONS[0]);
-    if (!next || !this._base) return;
+    if (!next || !this._base) return false;
 
-    const previous = this._cast;
+    const previous = this._reaction ?? this._cast;
+    if (interruptReaction) this._reaction = null;
     this._cast = next;
 
     next.reset();
@@ -332,6 +368,7 @@ export class CharacterController {
     // restarts it: `reset()` has already left it at full weight.
     const from = previous ?? this._base;
     if (from !== next) next.crossFadeFrom(from, settings.character.castBlendIn, false);
+    return true;
   }
 
   /** True while a cast clip is playing. */
@@ -339,11 +376,47 @@ export class CharacterController {
     return this._cast !== null;
   }
 
-  _onCastFinished = (event) => {
+  get isReacting() {
+    return this._reaction !== null;
+  }
+
+  /**
+   * Interrupt the current body action once, then ignore further hits until this
+   * one-shot has recovered. This prevents a horde from pinning the pose at frame 0.
+   */
+  playHitReaction() {
+    const next = this.hitReaction;
+    if (!next || this.isReacting) return false;
+
+    const previous = this._cast ?? this._base;
+    this._cast = null;
+    this._reaction = next;
+    this._lunge = 0;
+    next.reset();
+    next.setEffectiveWeight(1);
+    next.setEffectiveTimeScale(settings.character.hitReactionSpeed);
+    next.play();
+    if (previous && previous !== next) {
+      next.crossFadeFrom(previous, settings.character.hitReactionBlendIn, false);
+    }
+    return true;
+  }
+
+  _onActionFinished = (event) => {
+    if (event.action === this._reaction) {
+      this._reaction = null;
+      this._returnToLocomotion(event.action, settings.character.hitReactionBlendOut);
+      return;
+    }
+
     // Anything else finishing is an older clip that a re-cast already faded out.
     if (event.action !== this._cast) return;
     this._cast = null;
 
+    this._returnToLocomotion(event.action, settings.character.castBlendOut);
+  };
+
+  _returnToLocomotion(previous, blend) {
     // Movement may have changed while the cast was playing. Return to the base
     // action wanted now, not necessarily the one the cast started from.
     const next = this._desiredBase ?? this.idle;
@@ -352,8 +425,8 @@ export class CharacterController {
     next.reset();
     next.setEffectiveTimeScale(1);
     next.play();
-    next.crossFadeFrom(event.action, settings.character.castBlendOut, false);
-  };
+    next.crossFadeFrom(previous, blend, false);
+  }
 
   /* ------------------------------------------------------------------ */
   /* placement — driven by walk mode, inert otherwise                    */
@@ -387,7 +460,7 @@ export class CharacterController {
 
     // Let the cast own the body until it finishes; its completion handler will
     // blend into whichever movement state is wanted by then.
-    if (this.isCasting) return;
+    if (this.isCasting || this.isReacting) return;
 
     const previous = this._base;
     this._base = next;
@@ -409,6 +482,7 @@ export class CharacterController {
    * dropping `castLean` and `castRecoil` to zero when the clip says it all.
    */
   castLunge() {
+    if (this.isReacting) return;
     this._lunge = 1;
   }
 
@@ -449,7 +523,7 @@ export class CharacterController {
   }
 
   dispose() {
-    this.mixer?.removeEventListener('finished', this._onCastFinished);
+    this.mixer?.removeEventListener('finished', this._onActionFinished);
     this.mixer?.stopAllAction();
     this.mixer = null;
     this.idle = null;
@@ -458,6 +532,8 @@ export class CharacterController {
     this._desiredBase = null;
     this.casts.clear();
     this._cast = null;
+    this.hitReaction = null;
+    this._reaction = null;
     disposeObject(this.root);
   }
 }

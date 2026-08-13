@@ -176,6 +176,7 @@ export class Ability {
 
     this.group.visible = true;
     this.onSpawn();
+    this.ctx.combat?.beginCast(this);
   }
 
   /** A point on the cast line. `s` is 0..1 along it. */
@@ -217,6 +218,7 @@ export class Ability {
           this.phase = AbilityPhase.IMPACT;
           this.impactTime = 0;
           this.onImpact();
+          this.ctx.combat?.onAbilityImpact(this);
         }
         break;
       }
@@ -245,6 +247,7 @@ export class Ability {
       default:
         break;
     }
+    this.ctx.combat?.updateAbility(this);
   }
 
   _updateLight(dt, scale) {
@@ -265,6 +268,7 @@ export class Ability {
 
   /** Return to the pool. Must leave the instance reusable. */
   destroy() {
+    this.ctx.combat?.endCast(this);
     this.onDestroy();
     this.ctx.lights.release(this.light);
     this.light = null;
