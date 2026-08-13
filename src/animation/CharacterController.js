@@ -221,7 +221,7 @@ export class CharacterController {
     disposeObject(file);
   }
 
-  /** Keep the imported reaction clip only; its duplicate Zombie mesh is discarded. */
+  /** Keep the imported reaction clip only; its duplicate source mesh is discarded. */
   _registerHitReaction(file, bones) {
     const source = (file?.animations ?? [])[0];
     if (!source) {

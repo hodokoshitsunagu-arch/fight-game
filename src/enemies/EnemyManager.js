@@ -33,14 +33,14 @@ export class EnemyManager extends EventEmitter {
   }
 
   async load(assets, onProgress) {
-    onProgress?.('Loading Zombie animations…');
+    onProgress?.('Loading Monster model and animations…');
     this.assets = await EnemyAssets.load(assets, this.environment);
     this.pool = new EnemyPool(this.scene, this.assets, this);
     this.pool.prewarm(Math.min(settings.enemy.prewarm, settings.enemy.maxAlive));
     this.spawner.queue(settings.enemy.initialHorde);
   }
 
-  /** Temporarily expose one pooled model so compileAsync sees Zombie shaders. */
+  /** Temporarily expose one pooled model so compileAsync sees Monster shaders. */
   setCompileVisible(visible) {
     if (!this.pool) return;
     this.compileEnemy ??= this.pool.free[this.pool.free.length - 1] ?? null;

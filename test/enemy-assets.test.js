@@ -13,87 +13,113 @@ globalThis.document = {
 };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const files = [
-  'Zombie Walking .fbx',
-  'Zombie Punching.fbx',
-  'Zombie Death.fbx',
-  'Flying Back Death.fbx'
-];
-
-test('all Zombie FBX files share the same skeleton and animation bindings', async () => {
+test('Monster model keeps its complete rig and receives four compatible animation poses', async () => {
   const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js');
   const loader = new FBXLoader();
-  let expectedBones = null;
-  let expectedTracks = null;
-  let walkingObject = null;
-  const loadedClips = {};
-
-  for (const file of files) {
+  const parse = (file) => {
     const bytes = fs.readFileSync(path.join(root, 'public', 'models', file));
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    const object = loader.parse(buffer, './public/models/');
-    const clip = object.animations[0];
-    assert.ok(clip?.duration > 1, `${file} needs a usable clip`);
-    const tracks = clip.tracks.map((track) => track.name).sort();
-    let bones = null;
-    object.traverse((node) => {
-      if (!bones && node.isSkinnedMesh) bones = node.skeleton.bones.map((bone) => bone.name);
-    });
-    assert.equal(bones?.length, 63);
-    assert.equal(tracks.length, 50);
-    expectedBones ??= bones;
-    expectedTracks ??= tracks;
-    assert.deepEqual(bones, expectedBones, `${file} skeleton differs`);
-    assert.deepEqual(tracks, expectedTracks, `${file} tracks differ`);
-    loadedClips[file] = clip.clone();
-    if (file === 'Zombie Walking .fbx') walkingObject = object;
-  }
+    return loader.parse(buffer, './public/models/');
+  };
 
-  const { optimiseTemplate } = await import('../src/enemies/EnemyAssets.js');
-  const meshes = optimiseTemplate(walkingObject, { registerShadowCaster() {} });
+  const rawMonster = parse('Monster.fbx');
+  const mutantWalk = parse('Mutant Walking.fbx').animations[0];
+  assert.ok(mutantWalk?.duration > 1, 'Mutant Walking needs a usable clip');
+  const rawMeshes = [];
+  rawMonster.traverse((node) => {
+    if (node.isSkinnedMesh) rawMeshes.push(node);
+  });
+  assert.equal(rawMeshes.length, 1, 'Monster source contains one skinned mesh');
+  assert.equal(rawMeshes[0].skeleton.bones.length, 43);
+  const rawBones = new Set(rawMeshes[0].skeleton.bones);
+  assert.equal(
+    rawMeshes[0].skeleton.bones.filter((bone) => rawBones.has(bone.parent)).length,
+    42,
+    'Monster source skeleton is one complete hierarchy'
+  );
+
+  const { EnemyAssets } = await import('../src/enemies/EnemyAssets.js');
+  const loadedFiles = [];
+  const assets = await EnemyAssets.load({
+    async loadFBX(url) {
+      const file = path.posix.basename(url);
+      loadedFiles.push(file);
+      return parse(file);
+    },
+    async settled() {}
+  }, { registerShadowCaster() {} });
+  assert.deepEqual(loadedFiles, [
+    'Monster.fbx',
+    'Mutant Walking.fbx',
+    'Zombie Punching.fbx',
+    'Zombie Death.fbx',
+    'Flying Back Death.fbx'
+  ]);
+  assert.equal(assets.clips.walk.duration, mutantWalk.duration, 'walk uses Mutant Walking.fbx');
+
+  const targetBones = new Map();
   let remainingBones = 0;
   let hierarchyLinks = 0;
   let canonicalSkeleton = null;
-  walkingObject.traverse((node) => {
-    if (node.isBone) remainingBones++;
+  const templateMeshes = [];
+  assets.template.traverse((node) => {
+    if (node.isBone) {
+      remainingBones++;
+      targetBones.set(node.name, node);
+    }
     if (node.isSkinnedMesh && !canonicalSkeleton) canonicalSkeleton = node.skeleton;
+    if (node.isSkinnedMesh) templateMeshes.push(node);
   });
   const canonicalBones = new Set(canonicalSkeleton.bones);
   for (const bone of canonicalBones) if (canonicalBones.has(bone.parent)) hierarchyLinks++;
-  assert.equal(remainingBones, 63, 'template keeps one skeleton');
-  assert.equal(hierarchyLinks, 62, 'template keeps the complete bone hierarchy');
-  assert.equal(meshes.length, 2, 'body and clothing collapse to two draw meshes');
-  assert.ok(meshes.every((mesh) => !Array.isArray(mesh.material)), 'each mesh uses one material');
+  assert.equal(remainingBones, 43, 'template keeps exactly one Monster skeleton');
+  assert.equal(hierarchyLinks, 42, 'template keeps the complete Monster bone hierarchy');
+  assert.equal(templateMeshes.length, 1, 'Monster stays in one draw mesh');
+  assert.ok(templateMeshes.every((mesh) => !Array.isArray(mesh.material)), 'each mesh uses one material');
+  assert.equal(assets.template.animations.length, 0, 'the one-frame source take is not used');
 
-  const { clone } = await import('three/examples/jsm/utils/SkeletonUtils.js');
-  const instance = clone(walkingObject);
+  for (const [name, clip] of Object.entries(assets.clips)) {
+    assert.ok(clip.duration > 1, `${name} needs a usable clip`);
+    assert.equal(clip.tracks.length, 35, `${name} keeps only Monster-compatible tracks`);
+    assert.ok(
+      clip.tracks.every((track) => targetBones.has(track.name.split('.')[0])),
+      `${name} contains no tracks for missing finger bones`
+    );
+  }
+  for (const name of ['walk', 'attack']) {
+    const hips = assets.clips[name].tracks.find((track) => /Hips\.position$/i.test(track.name));
+    assert.ok(hips, `${name} has a hips position track`);
+    const targetHips = targetBones.get(hips.name.split('.')[0]);
+    assert.ok(
+      Math.abs(hips.values[1] - targetHips.position.y) < 1e-5,
+      `${name} starts at the Monster hip height`
+    );
+    for (let i = 3; i < hips.values.length; i += 3) {
+      assert.ok(
+        Math.abs(hips.values[i] - targetHips.position.x) < 1e-5,
+        `${name} has no authored X root motion`
+      );
+      assert.ok(
+        Math.abs(hips.values[i + 2] - targetHips.position.z) < 1e-5,
+        `${name} has no authored Z root motion`
+      );
+    }
+  }
+
+  const instance = assets.createModel();
   let clonedBones = 0;
   const clonedMeshes = [];
   instance.traverse((node) => {
     if (node.isBone) clonedBones++;
     if (node.isSkinnedMesh) clonedMeshes.push(node);
   });
-  assert.equal(clonedBones, 63, 'pooled instance clones one rig');
-  assert.equal(clonedMeshes.length, 2);
-  assert.ok(clonedMeshes.every((mesh) => mesh.skeleton.bones.length === 63));
-  assert.notEqual(clonedMeshes[0].skeleton.bones[0], meshes[0].skeleton.bones[0]);
-
-  const { AnimationMixer } = await import('three');
-  const mixer = new AnimationMixer(instance);
-  const action = mixer.clipAction(walkingObject.animations[0]);
-  const animatedBone = clonedMeshes[0].skeleton.bones.find((bone) => bone.name === 'mixamorigLeftUpLeg');
-  const before = animatedBone.quaternion.clone();
-  action.play();
-  mixer.update(0.35);
-  assert.ok(before.angleTo(animatedBone.quaternion) > 0.01, 'walk clip moves the cloned skeleton');
+  assert.equal(clonedBones, 43, 'pooled instance clones one rig');
+  assert.equal(clonedMeshes.length, 1);
+  assert.ok(clonedMeshes.every((mesh) => mesh.skeleton.bones.length === 43));
+  assert.notEqual(clonedMeshes[0].skeleton.bones[0], templateMeshes[0].skeleton.bones[0]);
 
   const { EnemyAnimation } = await import('../src/enemies/EnemyAnimation.js');
-  const controller = new EnemyAnimation(instance, {
-    walk: loadedClips['Zombie Walking .fbx'],
-    attack: loadedClips['Zombie Punching.fbx'],
-    death: loadedClips['Zombie Death.fbx'],
-    flyingDeath: loadedClips['Flying Back Death.fbx']
-  });
+  const controller = new EnemyAnimation(instance, assets.clips);
   controller.play('walk', { randomPhase: true });
   assert.equal(controller.currentName, 'walk');
   controller.update(0.1);
@@ -118,7 +144,7 @@ test('all Zombie FBX files share the same skeleton and animation bindings', asyn
   assert.equal(poseSignatures.size, 4, 'walk, attack and both deaths produce distinct poses');
   controller.dispose();
 
-  const prewarmed = Array.from({ length: 100 }, () => clone(walkingObject));
+  const prewarmed = Array.from({ length: 100 }, () => assets.createModel());
   let instanceMeshes = 0;
   let instanceBones = 0;
   for (const root of prewarmed) {
@@ -127,8 +153,9 @@ test('all Zombie FBX files share the same skeleton and animation bindings', asyn
       if (node.isBone) instanceBones++;
     });
   }
-  assert.equal(instanceMeshes, 200);
-  assert.equal(instanceBones, 6300);
+  assert.equal(instanceMeshes, 100);
+  assert.equal(instanceBones, 4300);
+  assets.dispose();
 });
 
 test('player hit reaction binds to the display character skeleton', async () => {

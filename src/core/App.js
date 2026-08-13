@@ -310,7 +310,7 @@ export class App {
 
   spawnHorde(count) {
     this.enemies.spawnHorde(count);
-    this.hud.showToast(`Spawning ${count} Zombies`);
+    this.hud.showToast(`Spawning ${count} Monsters`);
   }
 
   clearEnemies() {

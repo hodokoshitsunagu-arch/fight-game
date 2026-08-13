@@ -229,7 +229,7 @@ export const settings = {
     castRecoil: 0.16, // metres the body is shoved back
     castSettle: 2.6, // seconds⁻¹ the lunge decays at
 
-    /* --- Zombie hit reaction --- */
+    /* --- Monster hit reaction --- */
     hitReactionInvulnerability: 0.7, // global crowd-hit gate, seconds
     hitReactionSpeed: 1.25,
     hitReactionBlendIn: 0.08,
@@ -238,7 +238,7 @@ export const settings = {
   },
 
   /* ------------------------------------------------------------------ */
-  /* Zombie horde                                                       */
+  /* Monster horde                                                      */
   /* ------------------------------------------------------------------ */
   enemy: {
     enabled: true,

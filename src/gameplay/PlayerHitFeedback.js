@@ -4,7 +4,7 @@ import { settings } from '../config/settings.js';
 const HIT_FLASH_COLOR = new Color('#ff6670');
 
 /**
- * One global gate for all Zombie attacks. It deliberately owns no HP: an
+ * One global gate for all Monster attacks. It deliberately owns no HP: an
  * accepted hit only drives animation, a restrained vignette and camera trauma.
  */
 export class PlayerHitFeedback {

@@ -25,7 +25,7 @@ export class Enemy {
     this.seed = Math.random();
     this.events = events;
     this.root = new Group();
-    this.root.name = `Zombie:${id}`;
+    this.root.name = `Monster:${id}`;
     this.model = assets.createModel();
     this.modelBasePosition = this.model.position.clone();
     this.root.add(this.model);

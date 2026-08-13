@@ -1690,7 +1690,7 @@ export class Editor {
   }
 
   _buildEnemies() {
-    const folder = this.gui.addFolder('Zombie horde');
+    const folder = this.gui.addFolder('Monster horde');
     const c = settings.enemy;
     const R = Editor.range;
     folder.add(c, 'enabled').name('enabled');

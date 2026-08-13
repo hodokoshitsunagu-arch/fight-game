@@ -15,7 +15,8 @@ import { disposeObject } from '../utils/dispose.js';
 import { patchOnBeforeCompile, prependChunk, replaceChunk } from '../utils/shaderPatch.js';
 
 const FILES = Object.freeze({
-  walk: './models/Zombie Walking .fbx',
+  model: './models/Monster.fbx',
+  walk: './models/Mutant Walking.fbx',
   attack: './models/Zombie Punching.fbx',
   death: './models/Zombie Death.fbx',
   flyingDeath: './models/Flying Back Death.fbx'
@@ -24,20 +25,25 @@ const TARGET_HEIGHT = 1.95;
 const _size = new Vector3();
 const _center = new Vector3();
 
-function flattenedClip(source, name, flattenXZ) {
+function preparedClip(source, name, flattenXZ, targetBones) {
   const clip = source?.animations?.[0]?.clone();
   if (!clip) throw new Error(`[EnemyAssets] ${name} FBX has no animation clip`);
   clip.name = name;
-  if (flattenXZ) {
-    for (const track of clip.tracks) {
-      if (!/Hips\.position$/i.test(track.name)) continue;
-      const values = track.values;
-      const x = values[0];
-      const z = values[2];
-      for (let i = 0; i < values.length; i += 3) {
-        values[i] = x;
-        values[i + 2] = z;
-      }
+  clip.tracks = clip.tracks.filter((track) => targetBones.has(track.name.split('.')[0]));
+  if (!clip.tracks.length) {
+    throw new Error(`[EnemyAssets] ${name} FBX has no tracks compatible with the Monster skeleton`);
+  }
+  for (const track of clip.tracks) {
+    if (!/\.position$/i.test(track.name)) continue;
+    const target = targetBones.get(track.name.split('.')[0]);
+    const values = track.values;
+    const offsetX = target.position.x - values[0];
+    const offsetY = target.position.y - values[1];
+    const offsetZ = target.position.z - values[2];
+    for (let i = 0; i < values.length; i += 3) {
+      values[i] = flattenXZ ? target.position.x : values[i] + offsetX;
+      values[i + 1] += offsetY;
+      values[i + 2] = flattenXZ ? target.position.z : values[i + 2] + offsetZ;
     }
   }
   return clip;
@@ -83,7 +89,7 @@ function materialBucket(material) {
 
 function buildMaterial(source, bucket, environment) {
   const material = new MeshStandardMaterial({
-    name: `Zombie:${bucket}`,
+    name: `Monster:${bucket}`,
     color: source?.color ?? 0xffffff,
     map: source?.map ?? null,
     normalMap: source?.normalMap ?? null,
@@ -128,7 +134,7 @@ function buildMaterial(source, bucket, environment) {
     );
     material.userData.enemyShader = shader;
   });
-  material.customProgramCacheKey = () => 'zombie-feedback-v1';
+  material.customProgramCacheKey = () => 'monster-feedback-v1';
   environment.registerShadowCaster(material);
   return material;
 }
@@ -155,13 +161,12 @@ export function optimiseTemplate(fbx, environment) {
   fbx.traverse((node) => {
     if (node.isSkinnedMesh) sourceMeshes.push(node);
   });
-  if (!sourceMeshes.length) throw new Error('[EnemyAssets] walking FBX contains no SkinnedMesh');
+  if (!sourceMeshes.length) throw new Error('[EnemyAssets] Monster FBX contains no SkinnedMesh');
 
-  // This export contains three same-named 63-bone sets. Only one is the real
-  // parent/child hierarchy; the Body and Top deformers are helper bones hung
-  // one-by-one from it. Picking the first mesh therefore flattens the rig and
-  // produces the classic stretched-spaghetti skin. Select the skeleton with
-  // the most internal parent links (62 for a valid 63-bone tree).
+  // Never infer the canonical rig from mesh order. Some Mixamo FBX exports
+  // contain several same-named bone sets, including flat helper rigs which
+  // make an animated mesh stretch into long strips. The skeleton with the
+  // most internal parent links is the intact deforming hierarchy.
   const hierarchyScore = (mesh) => {
     const bones = new Set(mesh.skeleton.bones);
     let score = 0;
@@ -203,7 +208,7 @@ export function optimiseTemplate(fbx, environment) {
     geometry.computeBoundingSphere();
     const material = buildMaterial(sources.get(bucket), bucket, environment);
     const mesh = new SkinnedMesh(geometry, material);
-    mesh.name = `Zombie:${bucket}`;
+    mesh.name = `Monster:${bucket}`;
     mesh.bind(reference.skeleton, reference.bindMatrix);
     attachFeedback(mesh);
     optimised.push(mesh);
@@ -215,9 +220,8 @@ export function optimiseTemplate(fbx, environment) {
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const material of materials) material?.dispose();
   }
-  // Each clothing mesh carries an identical exported skeleton. The merged
-  // meshes all bind to the body's skeleton, so drop the two now-unreferenced
-  // bone hierarchies before cloning the template into the pool.
+  // Merged meshes all bind to the canonical skeleton. Drop any duplicated,
+  // now-unreferenced bone hierarchies before cloning the pooled template.
   const redundantRoots = [];
   fbx.traverse((node) => {
     if (!node.isBone || referenceBones.has(node)) return;
@@ -253,37 +257,43 @@ export class EnemyAssets {
   }
 
   static async load(assets, environment) {
-    const walking = await assets.loadFBX(FILES.walk);
+    const model = await assets.loadFBX(FILES.model);
     await assets.settled();
-    const clips = { walk: flattenedClip(walking, 'walk', true) };
+    const targetBones = new Map();
+    model.traverse((node) => {
+      if (node.isBone) targetBones.set(node.name, node);
+    });
+    if (!targetBones.size) throw new Error('[EnemyAssets] Monster FBX contains no bones');
 
-    for (const name of ['attack', 'death', 'flyingDeath']) {
+    const clips = {};
+
+    for (const name of ['walk', 'attack', 'death', 'flyingDeath']) {
       const file = await assets.loadFBX(FILES[name]);
       await assets.settled();
-      clips[name] = flattenedClip(file, name, name === 'attack');
+      clips[name] = preparedClip(file, name, name === 'walk' || name === 'attack', targetBones);
       disposeObject(file);
     }
 
-    const meshes = optimiseTemplate(walking, environment);
-    walking.animations.length = 0;
-    walking.scale.setScalar(0.01);
-    walking.updateMatrixWorld(true);
-    const box = new Box3().setFromObject(walking);
+    const meshes = optimiseTemplate(model, environment);
+    model.animations.length = 0;
+    model.scale.setScalar(0.01);
+    model.updateMatrixWorld(true);
+    const box = new Box3().setFromObject(model);
     box.getSize(_size);
-    walking.scale.multiplyScalar(TARGET_HEIGHT / Math.max(0.001, _size.y));
-    walking.updateMatrixWorld(true);
-    box.setFromObject(walking);
+    model.scale.multiplyScalar(TARGET_HEIGHT / Math.max(0.001, _size.y));
+    model.updateMatrixWorld(true);
+    box.setFromObject(model);
     box.getCenter(_center);
-    walking.position.x -= _center.x;
-    walking.position.z -= _center.z;
-    walking.position.y -= box.min.y;
-    walking.updateMatrixWorld(true);
+    model.position.x -= _center.x;
+    model.position.z -= _center.z;
+    model.position.y -= box.min.y;
+    model.updateMatrixWorld(true);
 
-    const forwardYaw = measureFacing(walking);
+    const forwardYaw = measureFacing(model);
     const materials = [...new Set(meshes.map((mesh) => mesh.material))];
     const geometries = [...new Set(meshes.map((mesh) => mesh.geometry))];
-    walking.visible = false;
-    return new EnemyAssets(walking, clips, materials, geometries, forwardYaw);
+    model.visible = false;
+    return new EnemyAssets(model, clips, materials, geometries, forwardYaw);
   }
 
   createModel() {

@@ -157,7 +157,7 @@ test('SelfAbilitySystem repulses every queried enemy and emits virtual healing',
   system.dispose();
 });
 
-test('vertical enemy impulses return to ground instead of leaving floating Zombies', () => {
+test('vertical enemy impulses return to ground instead of leaving floating Monsters', () => {
   const enemy = new Enemy(3, mockAssets, new EventEmitter());
   enemy.spawn(new Vector3(), new Vector3(10, 0, 0));
   enemy.externalVelocity.set(4, 12, 0);
