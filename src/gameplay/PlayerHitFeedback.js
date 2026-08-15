@@ -4,8 +4,8 @@ import { settings } from '../config/settings.js';
 const HIT_FLASH_COLOR = new Color('#ff6670');
 
 /**
- * One global gate for all Monster attacks. It deliberately owns no HP: an
- * accepted hit only drives animation, a restrained vignette and camera trauma.
+ * One global gate for all Monster attacks. HP is owned by PlayerHealth; this
+ * presenter validates authored melee contact and drives the visible response.
  */
 export class PlayerHitFeedback {
   constructor(character, {
@@ -28,11 +28,11 @@ export class PlayerHitFeedback {
     }
   }
 
-  tryHit(attacker) {
+  tryHit(attacker, damage = 0) {
     if (!attacker?.root?.visible || attacker.isDead || this.invulnerability > 0) return false;
     const dx = attacker.position.x - this.character.position.x;
     const dz = attacker.position.z - this.character.position.z;
-    const range = settings.enemy.attackHitRange;
+    const range = settings.enemy.attackHitRange + (attacker.targetKind === 'player' ? (attacker.target?.radius ?? 0) : 0);
     if (dx * dx + dz * dz > range * range) return false;
     if (!this.character.playHitReaction()) return false;
 
@@ -40,7 +40,7 @@ export class PlayerHitFeedback {
     this.overlayStrength = 1;
     this.damageNumbers?.spawnPlayer(
       this.character.position,
-      24 + Math.floor(Math.random() * 17),
+      Math.max(0, Math.round(damage)),
       '#ff5d68',
       'damage'
     );

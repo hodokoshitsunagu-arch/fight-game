@@ -47,13 +47,16 @@ test('Enemy attack emits once at the authored contact phase', () => {
   const events = new EventEmitter();
   const enemy = new Enemy(2, mockAssets, events);
   let contacts = 0;
-  events.on('enemy:attack', () => contacts++);
+  let lastContact = null;
+  events.on('enemy:attack', (event) => { contacts++; lastContact = event; });
   enemy.spawn(new Vector3(1, 0, 0), new Vector3());
   enemy.enterAttack();
   enemy.animation.normalizedTime = () => settings.enemy.attackContactPhase;
   enemy.update(0, true);
   enemy.update(0, true);
   assert.equal(contacts, 1);
+  assert.equal(lastContact.targetKind, 'relic');
+  assert.equal(lastContact.damage, settings.enemyTypes.normal.relicDamage);
   enemy.enterAttack(true);
   enemy.update(0, true);
   assert.equal(contacts, 2, 'a new swing gets one new contact');
@@ -187,15 +190,19 @@ test('EnemySpawner respects annulus radii and per-frame burst cap', () => {
   };
   const spawner = new EnemySpawner(manager);
   const previous = { ...settings.enemy };
-  Object.assign(settings.enemy, { enabled: true, maxAlive: 500, spawnRate: 0, spawnBatch: 10, minSpawnRadius: 22, maxSpawnRadius: 34 });
+  const previousWave = { ...settings.wave };
+  Object.assign(settings.enemy, { enabled: true, maxAlive: 500, minSpawnRadius: 22, maxSpawnRadius: 34 });
+  Object.assign(settings.wave, { spawnPerTickMin: 3, spawnPerTickMax: 3, maxSpawnPerFrame: 3, spawnIntervalMin: 0.12, spawnIntervalMax: 0.12 });
   spawner.queue(50);
   spawner.update(1 / 60, new Vector3());
-  assert.equal(spawned.length, 10);
+  assert.equal(spawned.length, 3);
+  assert.equal(spawner.pendingCount, 47);
   for (const position of spawned) {
     const radius = Math.hypot(position.x, position.z);
     assert.ok(radius >= 22 && radius <= 34);
   }
   Object.assign(settings.enemy, previous);
+  Object.assign(settings.wave, previousWave);
 });
 
 test('EnemyManager sphere and tapered line queries include hit radius', () => {

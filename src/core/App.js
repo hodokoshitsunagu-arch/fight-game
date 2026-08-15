@@ -4,6 +4,7 @@ import { Renderer } from './Renderer.js';
 import { Time } from './Time.js';
 import { CameraRig } from './CameraRig.js';
 import { frame } from './FrameUniforms.js';
+import { PerformanceQualityController } from './PerformanceQualityController.js';
 
 import { Environment } from '../world/Environment.js';
 import { Ground } from '../world/Ground.js';
@@ -29,11 +30,15 @@ import { EnemyManager } from '../enemies/EnemyManager.js';
 import { CombatSystem } from '../gameplay/CombatSystem.js';
 import { PlayerHitFeedback } from '../gameplay/PlayerHitFeedback.js';
 import { SelfAbilitySystem } from '../gameplay/SelfAbilitySystem.js';
+import { GameSession } from '../gameplay/GameSession.js';
+import { WaveState } from '../gameplay/WaveManager.js';
+import { RelicController } from '../gameplay/RelicController.js';
 import { PostProcessing } from '../postprocessing/PostProcessing.js';
 
 import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { DamageNumbers } from '../ui/DamageNumbers.js';
 import { Editor } from '../ui/Editor.js';
+import { GameUI } from '../ui/GameUI.js';
 
 import { settings, ELEMENTS } from '../config/settings.js';
 
@@ -93,11 +98,19 @@ export class App {
     this.shake = new CameraShake(this.rig);
     this.flash = new ScreenFlash();
 
+    this.relic = new RelicController(this.scene, {
+      bursts: this.bursts,
+      shake: this.shake,
+      flash: this.flash,
+      particles: this.particles
+    });
+
     /* ---- enemies & gameplay ---- */
     this.enemies = new EnemyManager(this.scene, this.camera, this.environment);
     this.damageNumbers = new DamageNumbers(this.camera);
     this.combat = new CombatSystem(this.enemies, this.particles, {
       damageNumbers: this.damageNumbers,
+      decals: this.decals,
       requestHitStop: (duration) => {
         this.hitStopRemaining = Math.min(0.05, Math.max(this.hitStopRemaining, duration));
       }
@@ -154,6 +167,38 @@ export class App {
       onClearEnemies: () => this.clearEnemies(),
       onToast: (message) => this.hud.showToast(message)
     });
+    this.editor.toggle();
+
+    this.gameUI = new GameUI({
+      onPlay: () => this.session?.start(),
+      onRetry: () => this.session?.start(),
+      onUpgrade: (id) => this.session?.selectUpgrade(id)
+    });
+
+    this.session = new GameSession({
+      enemies: this.enemies,
+      relic: this.relic,
+      character: this.character,
+      playerHitFeedback: this.playerHitFeedback,
+      callbacks: {
+        cancelControl: () => {
+          this.aim.cancel();
+          this.abilities.clear();
+        },
+        resetRuntime: () => this.resetRuntime(),
+        waveCleanup: () => {
+          this.clearEffects();
+          this.combat.reset();
+          this.damageNumbers.clear();
+        }
+      }
+    });
+    this.combat.setUpgradeManager(this.session.upgrades);
+    this.selfAbilities.setUpgradeManager(this.session.upgrades);
+    this.gameUI.bind(this.session);
+    this.performanceQuality = new PerformanceQualityController((quality) => {
+      this.hud.showToast(`Performance profile: ${quality.toUpperCase()}\n性能画质已自动调整`);
+    });
 
     this._bindEvents();
     this.selectAbility(ELEMENTS[0], { silent: true });
@@ -162,6 +207,10 @@ export class App {
     this._moveForward = new Vector3();
     this._moveRight = new Vector3();
     this._moveDirection = new Vector3();
+    this._debugSpawnPosition = new Vector3();
+    this.debugVisible = false;
+    this.debugAccumulator = 0;
+    this.debugSceneObjects = 0;
   }
 
   /** The ability currently in the slot. */
@@ -187,8 +236,8 @@ export class App {
 
     this.aim.on('cast', (origin, direction, distance) => this._cast(origin, direction, distance));
     this.aim.on('reject', () => this.hud.showToast('Too close — aim further out'));
-    this._offEnemyAttack = this.enemies.on('enemy:attack', (enemy) => {
-      this.playerHitFeedback.tryHit(enemy);
+    this._offWaveState = this.session.on('wave:state', ({ state }) => {
+      this.input.setMode(state === WaveState.UPGRADE ? 'upgrade' : 'gameplay');
     });
 
     this.hud.onAbility = (element) => this.armAbility(element);
@@ -196,8 +245,26 @@ export class App {
   }
 
   _handleAction(action, abilityId) {
+    if (action === 'toggleDebug') {
+      this.debugVisible = Boolean(abilityId);
+      this.gameUI.setDebugVisible(this.debugVisible);
+      this.hud.setDebugVisible(this.debugVisible);
+      this.hud.showToast(this.debugVisible ? 'Debug controls enabled · 调试模式开启' : 'Debug controls disabled');
+      return;
+    }
+    if (action === 'debug') {
+      this._handleDebugAction(abilityId);
+      return;
+    }
+    if (action === 'upgradeChoice') {
+      const offer = this.session.upgrades.currentOffers[abilityId];
+      if (offer) this.session.selectUpgrade(offer.id);
+      return;
+    }
+
     switch (action) {
       case 'ability': {
+        if (!this.session.canControl) return;
         const element = ELEMENTS.includes(abilityId) ? abilityId : this.element;
         // Pressing the *same* key again puts an armed cast away, as it does in a
         // MOBA; pressing a different one swaps the slot without disarming.
@@ -206,6 +273,7 @@ export class App {
         break;
       }
       case 'selfAbility':
+        if (!this.session.canControl) return;
         this.castSelfAbility(abilityId);
         break;
       case 'cancel':
@@ -222,15 +290,32 @@ export class App {
         this.hud.showToast('Effects cleared');
         break;
       case 'togglePause':
+        if (!this.session.isRunning) return;
         this.paused = !this.paused;
         this.hud.setPaused(this.paused);
         this.hud.showToast(this.paused ? 'Paused — the editor still applies' : 'Resumed');
         break;
       case 'spawnHorde':
-        this.spawnHorde(50);
+        if (this.session.isRunning) this.spawnHorde(50);
         break;
       default:
         break;
+    }
+  }
+
+  _handleDebugAction(action) {
+    switch (action) {
+      case 'skipWave': this.session.wave.skip(); break;
+      case 'killAll': this.enemies.killAll({ amount: 999999, element: 'debug', ignoreShield: true }); break;
+      case 'damageRelic': this.relic.damage(200, { debug: true }); break;
+      case 'healRelic': this.relic.heal(200); break;
+      case 'spawnElite':
+        this._debugSpawnPosition.copy(this.relic.position).addScalar(6).setY(0);
+        this.enemies.spawn(this._debugSpawnPosition, { archetype: 'elite', traits: ['berserk', 'shielded'], wave: this.session.wave.wave });
+        break;
+      case 'openUpgrade': this.session.wave.forceUpgrade(); break;
+      case 'gameOver': this.relic.damage(this.relic.maxHP, { debug: true }); break;
+      default: break;
     }
   }
 
@@ -247,6 +332,7 @@ export class App {
 
   /** Select an ability and arm it, unless it is still cooling down. */
   armAbility(element = this.element) {
+    if (!this.session.canControl) return;
     if ((this.cooldowns.get(element) ?? 0) > 0) {
       this.hud.showToast('Not ready');
       return;
@@ -258,9 +344,10 @@ export class App {
   }
 
   _cast(origin, direction, distance) {
+    if (!this.session.canControl) return;
     const element = this.element;
     this.abilities.cast(origin, direction, distance, element);
-    this.cooldowns.set(element, Math.max(0, settings[element].cooldown));
+    this.cooldowns.set(element, this._cooldownFor(element));
 
     // Snap onto the shot and throw the body into it. Which clip that is belongs
     // to the ability, so each spell can be cast with its own gesture.
@@ -270,6 +357,7 @@ export class App {
   }
 
   castSelfAbility(id) {
+    if (!this.session.canControl) return;
     if (!this.selfCooldowns.has(id)) return;
     if ((this.selfCooldowns.get(id) ?? 0) > 0) {
       this.hud.showToast('Ability not ready');
@@ -283,15 +371,26 @@ export class App {
     }
 
     const c = settings.selfAbilities;
-    this.selfCooldowns.set(id, id === 'repulse' ? c.repulseCooldown : c.healCooldown);
+    const baseCooldown = id === 'repulse' ? c.repulseCooldown : c.healCooldown;
+    this.selfCooldowns.set(id, baseCooldown * this.session.upgrades.cooldownMultiplier);
     this.playerHitFeedback.grantImmunity(
       id === 'repulse' ? c.repulseProtection : c.healProtection
     );
+    if (id === 'heal') {
+      const healed = this.session.player.heal(result.amount);
+      const relicHealed = this.session.healRelicFromLink();
+      result.amount = healed;
+      result.relicAmount = relicHealed;
+    }
     this.hud.showToast(
       id === 'repulse'
         ? `Force Repulse — ${result.affected} launched\n力场震退 — 弹飞 ${result.affected} 个敌人`
-        : `Verdant Heal +${result.amount}\n翠绿治愈 +${result.amount}`
+        : `Verdant Heal +${Math.round(result.amount)}${result.relicAmount ? ` · Relic +${Math.round(result.relicAmount)}` : ''}\n翠绿治愈 +${Math.round(result.amount)}`
     );
+  }
+
+  _cooldownFor(element) {
+    return Math.max(0, settings[element].cooldown * this.session.upgrades.cooldownMultiplier);
   }
 
   clearEffects() {
@@ -308,6 +407,18 @@ export class App {
     this.selfAbilities.clear();
   }
 
+  resetRuntime() {
+    this.paused = false;
+    this.hitStopRemaining = 0;
+    this.hud.setPaused(false);
+    this.clearEffects();
+    this.combat.reset();
+    this.enemies.clearEnemies({ resetKills: true });
+    this.damageNumbers.clear();
+    for (const element of ELEMENTS) this.cooldowns.set(element, 0);
+    for (const id of this.selfCooldowns.keys()) this.selfCooldowns.set(id, 0);
+  }
+
   spawnHorde(count) {
     this.enemies.spawnHorde(count);
     this.hud.showToast(`Spawning ${count} Monsters`);
@@ -321,6 +432,10 @@ export class App {
 
   /** Camera-relative WASD movement, with Shift selecting the run cycle. */
   _updateMovement(dt) {
+    if (!this.session.canControl) {
+      this.character.setLocomotion('idle');
+      return;
+    }
     const strafe = Number(this.input.isDown('KeyD')) - Number(this.input.isDown('KeyA'));
     const forward = Number(this.input.isDown('KeyW')) - Number(this.input.isDown('KeyS'));
 
@@ -386,7 +501,6 @@ export class App {
     await this.character.load(assets);
 
     this.loading.setProgress(0.66, 'Raising the horde…');
-    this.enemies.setTarget(this.character.position);
     await this.enemies.load(assets, (message) => this.loading.setProgress(0.72, message));
 
     this.loading.setProgress(0.9, 'Compiling shaders…');
@@ -424,9 +538,11 @@ export class App {
     gl.info.reset();
 
     const raw = this.time.tick();
+    this.session.update(raw);
+    this.performanceQuality.update(raw, this.session.isRunning && !this.paused);
     const hitStopped = this.hitStopRemaining > 0;
     this.hitStopRemaining = Math.max(0, this.hitStopRemaining - raw);
-    const dt = this.paused || hitStopped ? 0 : raw * settings.global.timeScale;
+    const dt = this.paused || hitStopped ? 0 : raw * settings.global.timeScale * this.session.simulationScale;
     this.elapsed += dt;
 
     /* ---- shared uniforms ---- */
@@ -474,6 +590,7 @@ export class App {
     this.fissures.update(dt);
     this.bursts.update(dt);
     this.lights.update(dt);
+    this.relic.update(raw * Math.max(0.18, this.session.simulationScale));
 
     /* ---- camera ---- */
     const focus = this.abilities.focus;
@@ -495,17 +612,17 @@ export class App {
 
     /* ---- readouts ---- */
     for (const element of ELEMENTS) {
-      this.hud.setCooldown(element, this.cooldowns.get(element) ?? 0, settings[element].cooldown);
+      this.hud.setCooldown(element, this.cooldowns.get(element) ?? 0, this._cooldownFor(element));
     }
     this.hud.setSelfCooldown(
       'repulse',
       this.selfCooldowns.get('repulse') ?? 0,
-      settings.selfAbilities.repulseCooldown
+      settings.selfAbilities.repulseCooldown * this.session.upgrades.cooldownMultiplier
     );
     this.hud.setSelfCooldown(
       'heal',
       this.selfCooldowns.get('heal') ?? 0,
-      settings.selfAbilities.healCooldown
+      settings.selfAbilities.healCooldown * this.session.upgrades.cooldownMultiplier
     );
     this.hud.setArmed(this.aim.isArmed);
     this.hud.update(raw, () => ({
@@ -517,6 +634,36 @@ export class App {
       kills: this.enemies.kills
     }));
     this.damageNumbers.update(raw);
+    this.gameUI.update(this.session, this.enemies);
+    this._updateDebug(raw, gl);
+  }
+
+  _updateDebug(raw, gl) {
+    if (!this.debugVisible) return;
+    this.debugAccumulator += raw;
+    if (this.debugAccumulator < 0.5) return;
+    this.debugAccumulator = 0;
+    let sceneObjects = 0;
+    this.scene.traverse(() => sceneObjects++);
+    this.debugSceneObjects = sceneObjects;
+    this.gameUI.updateDebug({
+      fps: this.hud._fps ?? 0,
+      wave: this.session.wave.wave,
+      state: this.session.state,
+      alive: this.enemies.aliveCount,
+      queue: this.enemies.pendingSpawnCount,
+      poolActive: this.enemies.active.length,
+      poolFree: this.enemies.pool?.free.length ?? 0,
+      targets: this.enemies.debugTargetStats(),
+      sceneObjects,
+      calls: gl.info.render.calls,
+      triangles: gl.info.render.triangles,
+      geometries: gl.info.memory.geometries,
+      textures: gl.info.memory.textures,
+      programs: gl.info.programs?.length ?? 0,
+      aiCost: this.enemies.aiCost ?? 0,
+      combatCost: this.combat.queryCost ?? 0
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -528,9 +675,12 @@ export class App {
     this.abilities.dispose();
     this.combat.dispose();
     this.selfAbilities.dispose();
-    this._offEnemyAttack?.();
+    this._offWaveState?.();
+    this.session.dispose();
+    this.gameUI.dispose();
     this.playerHitFeedback.dispose();
     this.enemies.dispose();
+    this.relic.dispose();
     this.damageNumbers.dispose();
     this.particles.dispose();
     this.decals.dispose();

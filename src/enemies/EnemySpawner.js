@@ -4,29 +4,49 @@ import { settings } from '../config/settings.js';
 export class EnemySpawner {
   constructor(manager) {
     this.manager = manager;
-    this.accumulator = 0;
-    this.queued = 0;
+    this.timer = 0;
+    this.queueItems = [];
+    this.cursor = 0;
     this.position = new Vector3();
   }
 
   queue(count) {
-    this.queued = Math.max(this.queued, Math.max(0, Math.floor(count)));
+    const total = Math.max(0, Math.floor(count));
+    const items = Array.from({ length: total }, () => ({ archetype: 'normal', traits: [], wave: 1 }));
+    this.queueDescriptors(items);
   }
 
-  update(dt, playerPosition) {
+  queueDescriptors(items) {
+    this.queueItems = Array.isArray(items) ? items.slice() : [];
+    this.cursor = 0;
+    this.timer = 0;
+  }
+
+  get pendingCount() {
+    return Math.max(0, this.queueItems.length - this.cursor);
+  }
+
+  update(dt, anchorPosition) {
     if (!settings.enemy.enabled) return;
-    this.accumulator += dt * settings.enemy.spawnRate;
-    let wanted = Math.floor(this.accumulator);
-    this.accumulator -= wanted;
-    if (this.queued > 0) {
-      const burst = Math.min(settings.enemy.spawnBatch, this.queued);
-      wanted += burst;
-      this.queued -= burst;
+    const maxAlive = this.manager.maxAliveLimit ?? settings.enemy.maxAlive;
+    if (this.pendingCount <= 0 || this.manager.aliveCount >= maxAlive) return;
+    const c = settings.wave;
+    this.timer -= dt;
+    if (this.timer > 0) return;
+
+    const batch = c.spawnPerTickMin + Math.floor(Math.random() * (c.spawnPerTickMax - c.spawnPerTickMin + 1));
+    let spawned = 0;
+    while (
+      spawned < Math.min(batch, c.maxSpawnPerFrame) &&
+      this.cursor < this.queueItems.length &&
+      this.manager.aliveCount < maxAlive
+    ) {
+      const descriptor = this.queueItems[this.cursor++];
+      this.manager.spawn(this.randomPosition(anchorPosition), descriptor);
+      spawned++;
     }
-    wanted = Math.min(wanted, settings.enemy.spawnBatch);
-    while (wanted-- > 0 && this.manager.aliveCount < settings.enemy.maxAlive) {
-      this.manager.spawn(this.randomPosition(playerPosition));
-    }
+    this.timer = c.spawnIntervalMin + Math.random() * (c.spawnIntervalMax - c.spawnIntervalMin);
+    if (this.cursor >= this.queueItems.length) this.queueItems.length = this.cursor;
   }
 
   randomPosition(playerPosition) {
@@ -44,7 +64,8 @@ export class EnemySpawner {
   }
 
   reset() {
-    this.accumulator = 0;
-    this.queued = 0;
+    this.timer = 0;
+    this.queueItems.length = 0;
+    this.cursor = 0;
   }
 }

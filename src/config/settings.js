@@ -238,15 +238,137 @@ export const settings = {
   },
 
   /* ------------------------------------------------------------------ */
+  /* RELIC: LAST STAND session rules                                    */
+  /* ------------------------------------------------------------------ */
+  game: {
+    prepareDuration: 3,
+    waveIntroDuration: 1.15,
+    waveClearDuration: 1.2,
+    relicRecoveryPercent: 0.05,
+    defeatSlowMotionDuration: 0.8,
+    defeatRevealDelay: 1.45,
+    defeatTimeScale: 0.18
+  },
+
+  player: {
+    maxHP: 300,
+    respawnDelay: 8,
+    respawnHealthPercent: 0.6,
+    respawnInvulnerability: 2,
+    respawnOffsetX: 2.4,
+    respawnOffsetZ: 0
+  },
+
+  relic: {
+    maxHP: 1000,
+    hitRadius: 1.65,
+    damageWarningPercent: 0.5,
+    criticalWarningPercent: 0.25
+  },
+
+  wave: {
+    baseBudget: 16,
+    linearGrowth: 4,
+    nonlinearFactor: 0.35,
+    nonlinearPower: 1.35,
+    spawnIntervalMin: 0.12,
+    spawnIntervalMax: 0.22,
+    spawnPerTickMin: 1,
+    spawnPerTickMax: 3,
+    maxSpawnPerFrame: 3,
+    normalMaxAlive: 100,
+    milestoneMaxAlive: 120,
+    recoveryMultiplier: 0.82,
+    pressureMultiplier: 1.15,
+    hpGrowthPerWave: 0.025,
+    hpGrowthCap: 2.5,
+    damageGrowthPerWave: 0.018,
+    damageGrowthCap: 2
+  },
+
+  enemyTypes: {
+    normal: {
+      cost: 1, hp: 100, speedMultiplier: 1, scale: 1,
+      playerDamage: 26, relicDamage: 20, attackSpeed: 1,
+      knockbackTaken: 1, relicBias: 0, score: 100
+    },
+    runner: {
+      cost: 1.5, hp: 65, speedMultiplier: 2.15, scale: 0.82,
+      playerDamage: 18, relicDamage: 22, attackSpeed: 1.35,
+      knockbackTaken: 1.25, relicBias: 25, score: 150
+    },
+    tank: {
+      cost: 4, hp: 400, speedMultiplier: 0.65, scale: 1.3,
+      playerDamage: 50, relicDamage: 70, attackSpeed: 0.75,
+      knockbackTaken: 0.35, relicBias: 20, score: 300
+    },
+    elite: {
+      cost: 8, hp: 250, speedMultiplier: 1.1, scale: 1.3,
+      playerDamage: 42, relicDamage: 55, attackSpeed: 1.1,
+      knockbackTaken: 0.55, relicBias: 10, score: 1000
+    }
+  },
+
+  enemyTraits: {
+    berserk: { speedMultiplier: 1.5, threshold: 0.3 },
+    heavy: { knockbackTaken: 0.2 },
+    shielded: { charges: 1 }
+  },
+
+  threat: {
+    targetLockDuration: 4,
+    playerAggroRange: 18,
+    provokedAggroRange: 24,
+    provokeDuration: 4,
+    playerBase: 100,
+    relicBase: 60,
+    provokeBonus: 60,
+    playerDistancePenalty: 2,
+    relicDistancePenalty: 1
+  },
+
+  score: {
+    waveClearMultiplier: 500,
+    storageKey: 'relicLastStand.v1'
+  },
+
+  upgrades: {
+    damagePerRank: 0.15,
+    cooldownPerRank: 0.08,
+    cooldownFloor: 0.45,
+    radiusPerRank: 0.12,
+    statusPerRank: 0.2,
+    repulsePerRank: 0.15,
+    healPerRank: 0.25,
+    burningRadius: 3,
+    burningDuration: 4,
+    burningInterval: 0.5,
+    burningDamage: 12,
+    shatterRadius: 2.2,
+    shatterDamage: 35,
+    thunderChainRange: 4,
+    thunderChainCount: 2,
+    thunderChainDamage: 0.45,
+    relicLinkPercent: 0.06
+  },
+
+  performance: {
+    autoQuality: true,
+    lowFpsThreshold: 42,
+    lowFpsDuration: 5,
+    changeCooldown: 20
+  },
+
+  /* ------------------------------------------------------------------ */
   /* Monster horde                                                      */
   /* ------------------------------------------------------------------ */
   enemy: {
     enabled: true,
     maxAlive: 100,
     prewarm: 100,
-    initialHorde: 36,
-    spawnRate: 8,
-    spawnBatch: 10,
+    initialHorde: 0,
+    spawnRate: 0,
+    spawnBatch: 3,
     minSpawnRadius: 22,
     maxSpawnRadius: 34,
     moveSpeed: 1.35,
@@ -273,7 +395,7 @@ export const settings = {
     repulseForce: 21,
     repulseCooldown: 4.5,
     repulseProtection: 0.75,
-    healAmount: 180,
+    healAmount: 90,
     healCooldown: 6,
     healProtection: 1.1,
     healDuration: 1.15
@@ -2137,8 +2259,8 @@ export const SELF_ABILITY_META = Object.freeze({
     zhDescription: '弹飞附近敌人', accent: '#78e8ff', key: '5', hint: 'Force Repulse'
   },
   heal: {
-    label: 'Verdant Heal', zhLabel: '翠绿治愈', description: 'Simulated health recovery',
-    zhDescription: '模拟生命恢复', accent: '#70ff9b', key: '6', hint: 'Verdant Heal'
+    label: 'Verdant Heal', zhLabel: '翠绿治愈', description: 'Restore player health',
+    zhDescription: '恢复玩家生命', accent: '#70ff9b', key: '6', hint: 'Verdant Heal'
   }
 });
 

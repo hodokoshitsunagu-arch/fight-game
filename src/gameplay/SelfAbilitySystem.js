@@ -25,6 +25,7 @@ export class SelfAbilitySystem {
     this.healAccumulator = 0;
     this.position = new Vector3();
     this.direction = new Vector3();
+    this.upgrades = null;
 
     this.repulseParticles = context.particles.get('self-repulse-streaks', {
       capacity: 900,
@@ -58,12 +59,18 @@ export class SelfAbilitySystem {
     return null;
   }
 
+  setUpgradeManager(upgrades) {
+    this.upgrades = upgrades;
+  }
+
   _castRepulse() {
     if (!this.character.playCast('cast1', { interruptReaction: true })) return null;
     this.character.castLunge();
     const c = settings.selfAbilities;
+    const multiplier = this.upgrades?.repulseMultiplier ?? 1;
+    const radius = c.repulseRadius * multiplier;
     this.position.copy(this.character.position).setY(0);
-    const hits = this.enemies.querySphere(this.position, c.repulseRadius, this.hitScratch);
+    const hits = this.enemies.querySphere(this.position, radius, this.hitScratch);
 
     for (const enemy of hits) {
       this.direction.subVectors(enemy.position, this.position);
@@ -71,18 +78,18 @@ export class SelfAbilitySystem {
       if (this.direction.lengthSq() < 1e-5) this.direction.set(Math.random() - 0.5, 0.65, Math.random() - 0.5);
       this.direction.normalize();
       enemy.applyDamage({
-        amount: c.repulseDamage,
+        amount: c.repulseDamage * multiplier,
         element: 'repulse',
         position: this.position,
         direction: this.direction,
-        force: c.repulseForce,
+        force: c.repulseForce * multiplier,
         damageType: 'impact',
         status: { type: 'shock', duration: 0.42, stagger: 0.42 },
         deathMode: 'flying'
       });
     }
 
-    this._repulseVfx(c.repulseRadius);
+    this._repulseVfx(radius);
     if (hits.length >= 8) this.ctx.requestHitStop?.(0.045);
     return { id: 'repulse', affected: hits.length };
   }
@@ -178,11 +185,12 @@ export class SelfAbilitySystem {
       colorA: HEAL_B,
       colorB: HEAL_A
     });
-    this.ctx.damageNumbers?.spawnPlayer(this.character.position, c.healAmount, '#70ff9b', 'heal');
+    const amount = c.healAmount * (this.upgrades?.healMultiplier ?? 1);
+    this.ctx.damageNumbers?.spawnPlayer(this.character.position, amount, '#70ff9b', 'heal');
     this.ctx.flash.trigger(HEAL_B, 0.2, 0.006);
     this.ctx.shake.add(0.12, 3.4, 12);
     this._emitHeal(120);
-    return { id: 'heal', amount: c.healAmount };
+    return { id: 'heal', amount };
   }
 
   _emitHeal(count) {

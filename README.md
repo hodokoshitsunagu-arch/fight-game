@@ -1,4 +1,24 @@
-# Elemental Sandbox
+# RELIC: LAST STAND
+
+An infinite Three.js horde-survival prototype built on the original Elemental Sandbox. Protect the
+central Relic, survive escalating mixed waves, choose one of three upgrades after every clear and
+push for a new local best score. Player death starts an eight-second respawn window; the run ends
+only when the Relic is destroyed.
+
+## Game loop
+
+1. Select **PLAY** and defend the central Relic through the wave countdown.
+2. Enemies prioritise the living player at close range, then turn on the Relic while the player is down.
+3. Clear the spawn queue and every living enemy to receive a three-card upgrade choice.
+4. Runner, Tank, Elite and data-driven Traits enter as the encounter budget rises.
+5. Relic destruction shows Wave, Score, Kills, Time and locally stored best results; **RETRY** resets the runtime without reloading assets.
+
+Press **F8** to enter the hidden debug context. While it is active, use **N/K/J/H/E/U/G** for
+skip wave, kill all, damage/heal Relic, spawn Elite, open upgrades and trigger Game Over.
+
+---
+
+## Original VFX sandbox
 
 A skillshot VFX sandbox built with **Three.js**, **Vite** and hand-written **GLSL**.
 

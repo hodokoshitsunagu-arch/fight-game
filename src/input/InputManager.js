@@ -20,6 +20,8 @@ export class InputManager extends EventEmitter {
     this.pointer = new Vector2(); // NDC
     this.keys = new Set();
     this.enabled = true;
+    this.mode = 'gameplay';
+    this.debugContext = false;
 
     this._bind();
   }
@@ -68,6 +70,32 @@ export class InputManager extends EventEmitter {
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
 
     this.keys.add(event.code);
+
+    if (event.code === 'F8') {
+      this.debugContext = !this.debugContext;
+      this.emit('action', 'toggleDebug', this.debugContext);
+      event.preventDefault();
+      return;
+    }
+
+    if (this.mode === 'upgrade' && ['Digit1', 'Digit2', 'Digit3'].includes(event.code)) {
+      this.emit('action', 'upgradeChoice', Number(event.code.slice(-1)) - 1);
+      event.preventDefault();
+      return;
+    }
+
+    if (this.debugContext) {
+      const debugActions = {
+        KeyN: 'skipWave', KeyK: 'killAll', KeyJ: 'damageRelic', KeyH: 'healRelic',
+        KeyE: 'spawnElite', KeyU: 'openUpgrade', KeyG: 'gameOver'
+      };
+      const action = debugActions[event.code];
+      if (action) {
+        this.emit('action', 'debug', action);
+        event.preventDefault();
+        return;
+      }
+    }
 
     switch (event.code) {
       // Ability ids. Keep these in step with `ELEMENT_META[...].key`.
@@ -139,6 +167,11 @@ export class InputManager extends EventEmitter {
   /** Whether a physical key is currently held. */
   isDown(code) {
     return this.enabled && this.keys.has(code);
+  }
+
+  setMode(mode) {
+    this.mode = mode;
+    if (mode !== 'gameplay') this.keys.clear();
   }
 
   dispose() {

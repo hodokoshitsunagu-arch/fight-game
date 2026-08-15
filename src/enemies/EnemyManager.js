@@ -21,7 +21,8 @@ export class EnemyManager extends EventEmitter {
     this.spawner = new EnemySpawner(this);
     this.grid = new SpatialHashGrid(2.2);
     this.active = [];
-    this.target = null;
+    this.targets = null;
+    this.maxAliveLimit = settings.wave.normalMaxAlive;
     this.kills = 0;
     this.aiAccumulator = 0;
     this.frameIndex = 0;
@@ -30,6 +31,9 @@ export class EnemyManager extends EventEmitter {
     this.frustum = new Frustum();
     this.projectionView = new Matrix4();
     this.compileEnemy = null;
+    this.aiCost = 0;
+    this.attackEvents = 0;
+    this._offAttackMetric = this.on('enemy:attack', () => this.attackEvents++);
   }
 
   async load(assets, onProgress) {
@@ -37,7 +41,6 @@ export class EnemyManager extends EventEmitter {
     this.assets = await EnemyAssets.load(assets, this.environment);
     this.pool = new EnemyPool(this.scene, this.assets, this);
     this.pool.prewarm(Math.min(settings.enemy.prewarm, settings.enemy.maxAlive));
-    this.spawner.queue(settings.enemy.initialHorde);
   }
 
   /** Temporarily expose one pooled model so compileAsync sees Monster shaders. */
@@ -48,13 +51,19 @@ export class EnemyManager extends EventEmitter {
   }
 
   setTarget(position) {
-    this.target = position;
+    const target = { kind: 'player', position, radius: 0.65, isTargetable: () => true };
+    this.setTargets(target, target);
   }
 
-  spawn(position) {
-    if (!this.pool || !this.target || this.aliveCount >= settings.enemy.maxAlive) return null;
-    const enemy = this.pool.acquire().spawn(position, this.target);
+  setTargets(player, relic) {
+    this.targets = { player, relic };
+  }
+
+  spawn(position, descriptor = {}) {
+    if (!this.pool || !this.targets || this.aliveCount >= this.maxAliveLimit) return null;
+    const enemy = this.pool.acquire().spawn(position, this.targets, descriptor);
     this.active.push(enemy);
+    this.emit('enemy:spawn', { enemy, descriptor });
     return enemy;
   }
 
@@ -62,12 +71,40 @@ export class EnemyManager extends EventEmitter {
     this.spawner.queue(count);
   }
 
+  queueWave(descriptors, maxAlive = settings.wave.normalMaxAlive) {
+    this.maxAliveLimit = Math.max(1, Math.floor(maxAlive));
+    this.spawner.queueDescriptors(descriptors);
+  }
+
+  stopSpawning() {
+    this.spawner.reset();
+  }
+
+  get pendingSpawnCount() {
+    return this.spawner.pendingCount;
+  }
+
+  invalidateTarget(kind) {
+    for (const enemy of this.active) enemy.invalidateTarget(kind);
+  }
+
+  killAll(hit = { element: 'debug', amount: 999999, debug: true }) {
+    const killHit = { element: 'debug', amount: 999999, ignoreShield: true, ...hit };
+    for (const enemy of this.active) {
+      if (!enemy.isDead) enemy.applyDamage(killHit);
+    }
+  }
+
   clearEnemies({ resetKills = false } = {}) {
     for (const enemy of this.active) this.pool?.release(enemy);
     this.active.length = 0;
     this.grid.clear();
     this.spawner.reset();
-    if (resetKills) this.kills = 0;
+    if (resetKills) {
+      this.kills = 0;
+      this.attackEvents = 0;
+      this.aiCost = 0;
+    }
   }
 
   get aliveCount() {
@@ -77,29 +114,34 @@ export class EnemyManager extends EventEmitter {
   }
 
   update(dt, realDt = dt) {
-    if (!this.pool || !this.target) return;
+    if (!this.pool || !this.targets) return;
     this.frameIndex++;
-    this.spawner.update(dt, this.target);
+    this.spawner.update(dt, this.targets.relic.position);
     this.grid.rebuild(this.active);
 
     this.aiAccumulator += dt;
     const aiStep = 1 / Math.max(1, settings.enemy.aiRate);
     if (this.aiAccumulator >= aiStep) {
+      const aiStart = performance.now();
       const step = Math.min(this.aiAccumulator, aiStep * 2);
       this.aiAccumulator = 0;
       for (const enemy of this.active) {
         if (enemy.isDead) continue;
         this.grid.queryRadius(enemy.position, settings.enemy.separationRadius, this.neighbourScratch);
-        enemy.tickAI(this.target, this.neighbourScratch, step);
+        enemy.tickAI(this.targets, this.neighbourScratch, step);
       }
+      const cost = performance.now() - aiStart;
+      this.aiCost += (cost - this.aiCost) * 0.16;
     }
 
     this.projectionView.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projectionView);
     for (let i = this.active.length - 1; i >= 0; i--) {
       const enemy = this.active[i];
-      const d2 = enemy.position.distanceToSquared(this.target);
-      const stride = d2 < 18 * 18 ? 1 : d2 < 34 * 34 ? 2 : 4;
+      const lodTarget = this.targets.player.isTargetable() ? this.targets.player.position : this.targets.relic.position;
+      const d2 = enemy.position.distanceToSquared(lodTarget);
+      const qualityStride = settings.global.quality === 'low' ? 2 : settings.global.quality === 'medium' ? 1.5 : 1;
+      const stride = Math.max(1, Math.round((d2 < 18 * 18 ? 1 : d2 < 34 * 34 ? 2 : 4) * qualityStride));
       const visible = this.frustum.containsPoint(enemy.position);
       enemy.update(dt, visible && this.frameIndex % stride === enemy.id % stride);
       if (enemy.recyclable) {
@@ -154,12 +196,26 @@ export class EnemyManager extends EventEmitter {
     this.kills++;
   }
 
+  debugTargetStats() {
+    let player = 0;
+    let relic = 0;
+    let attacking = 0;
+    for (const enemy of this.active) {
+      if (enemy.isDead) continue;
+      if (enemy.targetKind === 'player') player++;
+      else relic++;
+      if (enemy.state === 'attack') attacking++;
+    }
+    return { player, relic, attacking, attackEvents: this.attackEvents };
+  }
+
   dispose() {
     this.clearEnemies();
     this.pool?.dispose();
     this.pool = null;
     this.assets?.dispose();
     this.assets = null;
+    this._offAttackMetric?.();
     this.clear();
   }
 }

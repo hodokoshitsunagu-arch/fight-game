@@ -60,8 +60,8 @@ export class HUD {
 
     root.innerHTML = `
       <div class="hud__panel hud__title">
-        Horde Combat Demo
-        <span data-blurb>Move, gather the horde, then erase it with an ability.</span>
+        RELIC: LAST STAND
+        <span data-blurb>Protect the core. Survive the horde.</span>
       </div>
 
       <div class="hud__panel hud__stats">
@@ -84,8 +84,8 @@ export class HUD {
         <div class="hud__help-zh"><strong>1</strong> — 裂隙斩 · 直线斩击 &nbsp; <strong>2</strong> — 太阳凤凰 · 爆炸冲击</div>
         <div><strong>3</strong> — Gravity Singularity · Pull &nbsp; <strong>4</strong> — Worldroot Bloom · Root</div>
         <div class="hud__help-zh"><strong>3</strong> — 引力奇点 · 引力牵引 &nbsp; <strong>4</strong> — 世界树绽放 · 自然定身</div>
-        <div><strong>5</strong> — Force Repulse · Launch &nbsp; <strong>6</strong> — Verdant Heal · Recover</div>
-        <div class="hud__help-zh"><strong>5</strong> — 力场震退 · 范围弹飞 &nbsp; <strong>6</strong> — 翠绿治愈 · 模拟恢复</div>
+        <div><strong>5</strong> — Force Repulse · Launch &nbsp; <strong>6</strong> — Verdant Heal · Restore HP</div>
+        <div class="hud__help-zh"><strong>5</strong> — 力场震退 · 范围弹飞 &nbsp; <strong>6</strong> — 翠绿治愈 · 恢复生命</div>
         <div class="hud__help-note">3, 4, V and X use a targeting circle.</div>
         <div class="hud__help-zh">3、4、V、X 使用范围瞄准圈。</div>
         <div><strong>W A S D</strong> — Move &nbsp; <strong>Shift</strong> — Run</div>
@@ -142,6 +142,9 @@ export class HUD {
       calls: root.querySelector('[data-stat="calls"]')
     };
     this.help = root.querySelector('.hud__help');
+    this.help.classList.add('is-hidden');
+    this.statsPanel = root.querySelector('.hud__stats');
+    this.statsPanel.classList.add('is-hidden');
     this.toast = root.querySelector('[data-toast]');
     this.pausedBadge = root.querySelector('[data-paused]');
     this.abilityBar = root.querySelector('.hud__abilities');
@@ -215,6 +218,10 @@ export class HUD {
 
   setPaused(paused) {
     this.pausedBadge.classList.toggle('is-visible', paused);
+  }
+
+  setDebugVisible(visible) {
+    this.statsPanel.classList.toggle('is-hidden', !visible);
   }
 
   toggleHelp() {

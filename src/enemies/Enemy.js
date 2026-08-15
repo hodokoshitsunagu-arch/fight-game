@@ -17,6 +17,12 @@ const STATUS_COLORS = Object.freeze({
   snare: new Color('#b88aff')
 });
 const WHITE = new Color(1, 1, 1);
+const TYPE_COLORS = Object.freeze({
+  normal: new Color(1, 1, 1),
+  runner: new Color('#78f7ff'),
+  tank: new Color('#665c70'),
+  elite: new Color('#ff4fe1')
+});
 const _away = new Vector3();
 
 export class Enemy {
@@ -37,6 +43,17 @@ export class Enemy {
     this.aiVelocity = new Vector3();
     this.externalVelocity = new Vector3();
     this.target = null;
+    this.targets = null;
+    this.targetKind = 'relic';
+    this.targetLockRemaining = 0;
+    this.provokedRemaining = 0;
+    this.archetype = 'normal';
+    this.traits = [];
+    this.attackDamagePlayer = 26;
+    this.attackDamageRelic = 20;
+    this.attackSpeed = 1;
+    this.knockbackTaken = 1;
+    this.shieldCharges = 0;
     this.state = EnemyState.SPAWN;
     this.maxHP = 100;
     this.currentHP = 100;
@@ -56,6 +73,8 @@ export class Enemy {
     this.animationAccumulator = 0;
     this.renderFlash = 0;
     this.renderTint = new Color(1, 1, 1);
+    this.baseTint = new Color(1, 1, 1);
+    this.baseTintAmount = 0;
     this.renderTintAmount = 0;
     this.renderDissolve = 0;
 
@@ -65,18 +84,35 @@ export class Enemy {
     this.root.visible = false;
   }
 
-  spawn(position, target) {
+  spawn(position, targets, descriptor = {}) {
     const c = settings.enemy;
+    const archetype = settings.enemyTypes[descriptor.archetype] ? descriptor.archetype : 'normal';
+    const type = settings.enemyTypes[archetype];
+    const wave = Math.max(1, descriptor.wave ?? 1);
+    const hpScale = Math.min(settings.wave.hpGrowthCap, 1 + (wave - 1) * settings.wave.hpGrowthPerWave);
+    const damageScale = Math.min(settings.wave.damageGrowthCap, 1 + (wave - 1) * settings.wave.damageGrowthPerWave);
     this.position.copy(position);
     this.root.rotation.set(0, Math.random() * Math.PI * 2, 0);
-    this.root.scale.setScalar(1);
+    this.root.scale.setScalar(type.scale);
     this.model.position.copy(this.modelBasePosition);
     this.model.rotation.set(0, 0, 0);
-    this.target = target;
-    this.maxHP = Math.max(1, c.hp);
+    this.targets = targets;
+    this.target = targets?.relic ?? null;
+    this.targetKind = 'relic';
+    this.targetLockRemaining = 0;
+    this.provokedRemaining = 0;
+    this.archetype = archetype;
+    this.traits = Array.isArray(descriptor.traits) ? descriptor.traits.slice(0, 2) : [];
+    this.maxHP = Math.max(1, Math.round(type.hp * hpScale));
     this.currentHP = this.maxHP;
-    this.moveSpeed = c.moveSpeed * (0.9 + Math.random() * 0.2);
-    this.hitRadius = c.hitRadius;
+    this.moveSpeed = c.moveSpeed * type.speedMultiplier * (0.9 + Math.random() * 0.2);
+    this.hitRadius = c.hitRadius * type.scale;
+    this.attackDamagePlayer = Math.round(type.playerDamage * damageScale);
+    this.attackDamageRelic = Math.round(type.relicDamage * damageScale);
+    this.attackSpeed = type.attackSpeed;
+    this.knockbackTaken = type.knockbackTaken;
+    if (this.traits.includes('heavy')) this.knockbackTaken *= settings.enemyTraits.heavy.knockbackTaken;
+    this.shieldCharges = this.traits.includes('shielded') ? settings.enemyTraits.shielded.charges : 0;
     this.state = EnemyState.CHASE;
     this.isDead = false;
     this.attackReady = false;
@@ -91,13 +127,16 @@ export class Enemy {
     this.recoil = 0;
     this.renderFlash = 0;
     this.renderTint.copy(WHITE);
-    this.renderTintAmount = 0;
+    this.baseTint.copy(TYPE_COLORS[archetype] ?? WHITE);
+    this.baseTintAmount = archetype === 'normal' ? 0 : archetype === 'elite' ? 0.38 : 0.18;
+    this.renderTint.copy(this.baseTint);
+    this.renderTintAmount = this.baseTintAmount;
     this.renderDissolve = 0;
     this.aiVelocity.set(0, 0, 0);
     this.externalVelocity.set(0, 0, 0);
     this.animation.reset();
     this.animation.onFinished = (name) => this._onAnimationFinished(name);
-    this.animation.play('walk', { randomPhase: true, timeScale: 0.9 + Math.random() * 0.2 });
+    this.animation.play('walk', { randomPhase: true, timeScale: this.attackSpeed * (0.9 + Math.random() * 0.2) });
     this.root.visible = true;
     this.root.updateMatrixWorld(true);
     return this;
@@ -126,18 +165,26 @@ export class Enemy {
     this.aiVelocity.set(0, 0, 0);
     this.attackReady = false;
     this.attackHitEmitted = false;
-    this.animation.play('attack', { restart: true, timeScale: 1.15, blend: 0.16 });
+    this.animation.play('attack', { restart: true, timeScale: 1.15 * this.attackSpeed, blend: 0.16 });
   }
 
   enterChase() {
     if (this.isDead) return;
     this.state = EnemyState.CHASE;
     this.attackReady = false;
-    this.animation.play('walk', { timeScale: 0.95, blend: 0.16 });
+    this.animation.play('walk', { timeScale: 0.95 * this.attackSpeed, blend: 0.16 });
   }
 
   applyDamage(hit) {
     if (this.isDead || !this.root.visible) return 0;
+    if (this.shieldCharges > 0 && !hit.ignoreShield) {
+      this.shieldCharges--;
+      this.flashTimer = Math.max(this.flashTimer, 0.18);
+      this.renderTint.set('#d8f5ff');
+      this.renderTintAmount = 0.8;
+      this.events?.emit('enemy:shield', { enemy: this, hit });
+      return 0;
+    }
     const amount = Math.max(0, Math.min(this.currentHP, Number(hit.amount) || 0));
     if (amount <= 0) return 0;
 
@@ -155,8 +202,13 @@ export class Enemy {
     }
 
     if (hit.direction && hit.force) {
-      this.externalVelocity.addScaledVector(hit.direction, hit.force * settings.enemy.knockbackMultiplier);
+      this.externalVelocity.addScaledVector(
+        hit.direction,
+        hit.force * settings.enemy.knockbackMultiplier * this.knockbackTaken
+      );
     }
+
+    if (hit.canProvoke !== false) this.provokedRemaining = settings.threat.provokeDuration;
 
     const killed = this.currentHP <= 0;
     this.events?.emit('enemy:hit', { enemy: this, amount, hit, killed });
@@ -170,6 +222,7 @@ export class Enemy {
     this.isDead = true;
     this.state = EnemyState.DEAD;
     this.aiVelocity.set(0, 0, 0);
+    const deathStatus = this.statusType;
     this.statusTimer = 0;
     this.deathTimer = 0;
     this.deathDelay = Math.random() * 0.08;
@@ -179,27 +232,73 @@ export class Enemy {
       blend: 0.08,
       timeScale: 1.05
     });
-    this.events?.emit('enemy:death', { enemy: this, hit });
+    this.events?.emit('enemy:death', { enemy: this, hit, statusType: deathStatus });
     return true;
   }
 
-  tickAI(target, neighbours) {
+  invalidateTarget(kind) {
+    if (this.targetKind === kind) this.targetLockRemaining = 0;
+  }
+
+  _selectTarget(targets) {
+    const player = targets?.player;
+    const relic = targets?.relic;
+    const currentValid = this.target?.isTargetable?.() !== false;
+    if (currentValid && this.targetLockRemaining > 0) return this.target;
+
+    let best = relic?.isTargetable?.() !== false ? relic : null;
+    let bestScore = -Infinity;
+    if (best) {
+      const dx = best.position.x - this.position.x;
+      const dz = best.position.z - this.position.z;
+      bestScore = settings.threat.relicBase + (settings.enemyTypes[this.archetype]?.relicBias ?? 0)
+        - Math.sqrt(dx * dx + dz * dz) * settings.threat.relicDistancePenalty;
+    }
+    if (player?.isTargetable?.() !== false) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      const range = this.provokedRemaining > 0 ? settings.threat.provokedAggroRange : settings.threat.playerAggroRange;
+      if (distance <= range) {
+        const score = settings.threat.playerBase
+          + (this.provokedRemaining > 0 ? settings.threat.provokeBonus : 0)
+          - distance * settings.threat.playerDistancePenalty;
+        if (score > bestScore) {
+          best = player;
+          bestScore = score;
+        }
+      }
+    }
+    if (best && best !== this.target) {
+      this.target = best;
+      this.targetKind = best.kind;
+      this.targetLockRemaining = settings.threat.targetLockDuration;
+    }
+    return best;
+  }
+
+  tickAI(targets, neighbours, step = 0) {
     if (this.isDead) return;
-    this.target = target;
-    _away.subVectors(target, this.position).setY(0);
+    this.targets = targets;
+    this.targetLockRemaining = Math.max(0, this.targetLockRemaining - step);
+    this.provokedRemaining = Math.max(0, this.provokedRemaining - step);
+    const target = this._selectTarget(targets);
+    if (!target) return;
+    _away.subVectors(target.position, this.position).setY(0);
     const distance = _away.length();
+    const targetRadius = target.radius ?? 0;
     if (distance > 1e-5) _away.multiplyScalar(1 / distance);
 
     if (this.state === EnemyState.ATTACK) {
       this.setFacing(_away.x, _away.z);
-      if (distance > settings.enemy.attackExit || this.attackReady) {
-        if (distance <= settings.enemy.attackExit) this.enterAttack(true);
+      if (distance > settings.enemy.attackExit + targetRadius || this.attackReady) {
+        if (distance <= settings.enemy.attackExit + targetRadius) this.enterAttack(true);
         else this.enterChase();
       }
       return;
     }
 
-    if (distance <= settings.enemy.attackRange && this.hitTimer <= 0 && this.statusTimer <= 0) {
+    if (distance <= settings.enemy.attackRange + targetRadius && this.hitTimer <= 0 && this.statusTimer <= 0) {
       this.enterAttack();
       this.setFacing(_away.x, _away.z);
       return;
@@ -210,6 +309,10 @@ export class Enemy {
     else if (this.statusType === 'root') slow = 0;
     else if (this.statusType === 'snare') slow = 0.22;
     if (this.hitTimer > 0) slow *= 0.25;
+    if (
+      this.traits.includes('berserk') &&
+      this.currentHP / Math.max(1, this.maxHP) < settings.enemyTraits.berserk.threshold
+    ) slow *= settings.enemyTraits.berserk.speedMultiplier;
 
     this.aiVelocity.copy(_away).multiplyScalar(this.moveSpeed * slow);
     const separationRadius = settings.enemy.separationRadius;
@@ -250,7 +353,11 @@ export class Enemy {
       this.animation.normalizedTime('attack') >= settings.enemy.attackContactPhase
     ) {
       this.attackHitEmitted = true;
-      this.events?.emit('enemy:attack', this);
+      this.events?.emit('enemy:attack', {
+        enemy: this,
+        targetKind: this.targetKind,
+        damage: this.targetKind === 'player' ? this.attackDamagePlayer : this.attackDamageRelic
+      });
     }
 
     if (this.flashTimer > 0) this.flashTimer = Math.max(0, this.flashTimer - dt);
@@ -259,8 +366,10 @@ export class Enemy {
     else this.statusType = '';
     this.recoil = Math.max(0, this.recoil - dt * 6);
     this.renderFlash = Math.min(1, this.flashTimer / Math.max(0.001, settings.enemy.hitFlashDuration));
-    this.renderTint.copy(STATUS_COLORS[this.statusType] ?? WHITE);
-    this.renderTintAmount = this.statusType ? Math.min(0.48, this.statusTimer * 0.45) : 0;
+    this.renderTint.copy(STATUS_COLORS[this.statusType] ?? this.baseTint);
+    this.renderTintAmount = this.statusType
+      ? Math.min(0.48, this.statusTimer * 0.45)
+      : this.baseTintAmount;
 
     const impulseDamping = Math.exp(-settings.enemy.impulseDamping * dt);
     if (this.position.y > 0 || this.externalVelocity.y > 0) {
@@ -296,6 +405,9 @@ export class Enemy {
   reset() {
     this.root.visible = false;
     this.target = null;
+    this.targets = null;
+    this.targetKind = 'relic';
+    this.traits.length = 0;
     this.state = EnemyState.SPAWN;
     this.isDead = false;
     this.attackHitEmitted = false;
