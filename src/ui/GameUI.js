@@ -162,6 +162,23 @@ export class GameUI {
     this.root.classList.toggle('is-relic-critical', session.relic.healthPercent < 0.2 && !session.relic.isDestroyed);
   }
 
+  /**
+   * Take the run-based UI off screen for the sandbox.
+   *
+   * None of it has a meaning without a session: there is no wave to count, no
+   * relic to lose and nothing to upgrade. The title card is the loud one — it
+   * ships visible and dims the whole scene behind it, so a sandbox that skips
+   * `session.update()` would otherwise sit behind a PLAY button forever. The
+   * debug panel stays, since F8 is still useful here.
+   */
+  setSandbox(enabled) {
+    for (const section of [this.menu, this.sessionHud, this.downed, this.upgradeScreen, this.gameOver]) {
+      if (!section) continue;
+      section.classList.remove('is-visible');
+      section.style.display = enabled ? 'none' : '';
+    }
+  }
+
   setDebugVisible(visible) {
     this.debug.classList.toggle('is-visible', visible);
   }

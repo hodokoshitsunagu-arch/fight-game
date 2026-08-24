@@ -35,6 +35,9 @@ import { WaveState } from '../gameplay/WaveManager.js';
 import { RelicController } from '../gameplay/RelicController.js';
 import { PostProcessing } from '../postprocessing/PostProcessing.js';
 
+import { VoiceController } from '../voice/VoiceController.js';
+import { DummyField } from '../sandbox/DummyField.js';
+import { VoiceHUD } from '../ui/VoiceHUD.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { DamageNumbers } from '../ui/DamageNumbers.js';
 import { Editor } from '../ui/Editor.js';
@@ -65,6 +68,18 @@ export class App {
     this.paused = false;
     this.hitStopRemaining = 0;
     this._raf = 0;
+
+    /**
+     * Sandbox is the default: a spell playground driven by voice, with practice
+     * dummies and no waves. `?game` restores Relic: Last Stand.
+     *
+     * Nothing about the horde game is deleted to get here — spoken casting has
+     * a recogniser latency floor of several hundred milliseconds, which is fine
+     * in a playground and wrong in a wave-survival loop, so the two modes want
+     * different hosts rather than one compromised one.
+     */
+    this.sandbox =
+      typeof window === 'undefined' || !new URLSearchParams(window.location.search).has('game');
 
     /**
      * Seconds left before each ability can be armed again. Per element, so
@@ -193,6 +208,30 @@ export class App {
         }
       }
     });
+    /* ---- sandbox: dummies + voice ---- */
+    if (this.sandbox) {
+      this.gameUI.setSandbox(true);
+      this.dummies = new DummyField(this.enemies);
+      this.voiceHUD = new VoiceHUD(document.body);
+      this.voice = new VoiceController({
+        abilities: this.abilities,
+        camera: this.camera,
+        enemies: this.enemies,
+        character: this.character,
+        canCast: (element) => this.canControl && (this.cooldowns.get(element) ?? 0) <= 0,
+        // Reuse the keyboard cast's own follow-through, so a spoken cast throws
+        // the body and burns the cooldown exactly like a clicked one.
+        onCast: (element) => {
+          this.selectAbility(element);
+          this.cooldowns.set(element, this._cooldownFor(element));
+          this.character.setFacing(this.voice.targets.yaw);
+          this.character.playCast(settings[element].castAnim);
+          this.character.castLunge();
+        }
+      });
+      this._bindVoice();
+    }
+
     this.combat.setUpgradeManager(this.session.upgrades);
     this.selfAbilities.setUpgradeManager(this.session.upgrades);
     this.gameUI.bind(this.session);
@@ -216,6 +255,30 @@ export class App {
   /** The ability currently in the slot. */
   get element() {
     return this.abilities.selected;
+  }
+
+  /*
+   * Session gating, routed through one place.
+   *
+   * The sandbox runs without a `GameSession`, and an unstarted session reports
+   * `canControl === false` and `simulationScale === 0` — correct for a game
+   * waiting on its Play button, and completely wrong for a spell playground.
+   * Reading these three through the app instead of the session is what lets
+   * sandbox mode opt out without a conditional at every call site.
+   */
+
+  /** Whether the player may cast right now. */
+  get canControl() {
+    return this.sandbox ? true : this.session.canControl;
+  }
+
+  /** Simulation time multiplier; the sandbox always runs. */
+  get simulationScale() {
+    return this.sandbox ? 1 : this.session.simulationScale;
+  }
+
+  get isRunning() {
+    return this.sandbox ? true : this.session.isRunning;
   }
 
   /* ------------------------------------------------------------------ */
@@ -264,7 +327,7 @@ export class App {
 
     switch (action) {
       case 'ability': {
-        if (!this.session.canControl) return;
+        if (!this.canControl) return;
         const element = ELEMENTS.includes(abilityId) ? abilityId : this.element;
         // Pressing the *same* key again puts an armed cast away, as it does in a
         // MOBA; pressing a different one swaps the slot without disarming.
@@ -273,7 +336,7 @@ export class App {
         break;
       }
       case 'selfAbility':
-        if (!this.session.canControl) return;
+        if (!this.canControl) return;
         this.castSelfAbility(abilityId);
         break;
       case 'cancel':
@@ -290,13 +353,13 @@ export class App {
         this.hud.showToast('Effects cleared');
         break;
       case 'togglePause':
-        if (!this.session.isRunning) return;
+        if (!this.isRunning) return;
         this.paused = !this.paused;
         this.hud.setPaused(this.paused);
         this.hud.showToast(this.paused ? 'Paused — the editor still applies' : 'Resumed');
         break;
       case 'spawnHorde':
-        if (this.session.isRunning) this.spawnHorde(50);
+        if (this.isRunning) this.spawnHorde(50);
         break;
       default:
         break;
@@ -330,9 +393,47 @@ export class App {
     this.hud.setElement(element, options);
   }
 
+  /**
+   * Voice, the HUD and the push-to-talk key.
+   *
+   * Push-to-talk rather than always-on listening: an open microphone in a room
+   * where people are talking fires spells at conversation, and a demo that
+   * misfires is worse than one that needs a key held.
+   */
+  _bindVoice() {
+    const key = settings.voice.pushToTalkKey;
+
+    this._onVoiceKeyDown = (event) => {
+      if (event.code !== key || event.repeat) return;
+      const target = event.target;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      event.preventDefault(); // Space would otherwise scroll the page
+      this.voice.pressToTalk();
+    };
+    this._onVoiceKeyUp = (event) => {
+      if (event.code !== key) return;
+      this.voice.releaseToTalk();
+    };
+
+    window.addEventListener('keydown', this._onVoiceKeyDown);
+    window.addEventListener('keyup', this._onVoiceKeyUp);
+
+    this.voice.on('listening', (listening) => this.voiceHUD.setListening(listening));
+    this.voice.on('transcript', (text) => this.voiceHUD.setTranscript(text));
+    this.voice.on('cast', (element, modifiers) => this.voiceHUD.showCast(element, modifiers));
+    this.voice.on('mutate', (modifier) => this.voiceHUD.showMutation(modifier));
+    this.voice.on('miss', (text) => this.voiceHUD.showMiss(text));
+    this.voice.on('error', (kind) => {
+      if (kind === 'unsupported') this.voiceHUD.setSupported(false);
+      else this.hud.showToast(`Voice: ${kind}`);
+    });
+
+    this.voiceHUD.setSupported(this.voice.supported);
+  }
+
   /** Select an ability and arm it, unless it is still cooling down. */
   armAbility(element = this.element) {
-    if (!this.session.canControl) return;
+    if (!this.canControl) return;
     if ((this.cooldowns.get(element) ?? 0) > 0) {
       this.hud.showToast('Not ready');
       return;
@@ -344,7 +445,7 @@ export class App {
   }
 
   _cast(origin, direction, distance) {
-    if (!this.session.canControl) return;
+    if (!this.canControl) return;
     const element = this.element;
     this.abilities.cast(origin, direction, distance, element);
     this.cooldowns.set(element, this._cooldownFor(element));
@@ -357,7 +458,7 @@ export class App {
   }
 
   castSelfAbility(id) {
-    if (!this.session.canControl) return;
+    if (!this.canControl) return;
     if (!this.selfCooldowns.has(id)) return;
     if ((this.selfCooldowns.get(id) ?? 0) > 0) {
       this.hud.showToast('Ability not ready');
@@ -432,7 +533,7 @@ export class App {
 
   /** Camera-relative WASD movement, with Shift selecting the run cycle. */
   _updateMovement(dt) {
-    if (!this.session.canControl) {
+    if (!this.canControl) {
       this.character.setLocomotion('idle');
       return;
     }
@@ -520,6 +621,7 @@ export class App {
 
   start() {
     this.time.reset();
+    if (this.sandbox) this.dummies.start();
     const loop = () => {
       this._raf = requestAnimationFrame(loop);
       this.frame();
@@ -538,11 +640,11 @@ export class App {
     gl.info.reset();
 
     const raw = this.time.tick();
-    this.session.update(raw);
-    this.performanceQuality.update(raw, this.session.isRunning && !this.paused);
+    if (!this.sandbox) this.session.update(raw);
+    this.performanceQuality.update(raw, this.isRunning && !this.paused);
     const hitStopped = this.hitStopRemaining > 0;
     this.hitStopRemaining = Math.max(0, this.hitStopRemaining - raw);
-    const dt = this.paused || hitStopped ? 0 : raw * settings.global.timeScale * this.session.simulationScale;
+    const dt = this.paused || hitStopped ? 0 : raw * settings.global.timeScale * this.simulationScale;
     this.elapsed += dt;
 
     /* ---- shared uniforms ---- */
@@ -581,6 +683,14 @@ export class App {
     this.ground.update(this.elapsed);
     this.dust.update(this.elapsed, this.character.position);
 
+    if (this.sandbox) {
+      this.dummies.update(raw);
+      // Real time, deliberately: the window for a trailing modifier is a
+      // property of how fast someone talks, not of the simulation clock.
+      this.voice.update(raw);
+      this.voiceHUD.update(raw);
+    }
+
     this.enemies.update(dt, raw);
     this.combat.update(dt);
     this.abilities.update(dt);
@@ -590,7 +700,7 @@ export class App {
     this.fissures.update(dt);
     this.bursts.update(dt);
     this.lights.update(dt);
-    this.relic.update(raw * Math.max(0.18, this.session.simulationScale));
+    this.relic.update(raw * Math.max(0.18, this.simulationScale));
 
     /* ---- camera ---- */
     const focus = this.abilities.focus;
@@ -634,7 +744,7 @@ export class App {
       kills: this.enemies.kills
     }));
     this.damageNumbers.update(raw);
-    this.gameUI.update(this.session, this.enemies);
+    if (!this.sandbox) this.gameUI.update(this.session, this.enemies);
     this._updateDebug(raw, gl);
   }
 
@@ -670,6 +780,13 @@ export class App {
 
   dispose() {
     this.stop();
+    if (this.sandbox) {
+      window.removeEventListener('keydown', this._onVoiceKeyDown);
+      window.removeEventListener('keyup', this._onVoiceKeyUp);
+      this.voice.dispose();
+      this.voiceHUD.dispose();
+      this.dummies.dispose();
+    }
     this.input.dispose();
     this.aim.dispose();
     this.abilities.dispose();

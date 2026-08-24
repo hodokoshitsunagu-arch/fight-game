@@ -2155,6 +2155,40 @@ export const settings = {
     // window resizes.
     distortion: 0.045,
     flashStrength: 1.0
+  },
+
+  /* ------------------------------------------------------------------ */
+  /* Voice casting                                                       */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Spoken spellcasting. Lives here like everything else so the magnitudes are
+   * live-tunable from the editor — which is the only sane way to dial in what
+   * "greater" should mean, since the answer is a look, not a number.
+   */
+  voice: {
+    enabled: true,
+    lang: 'en-US', // 'en-US' | 'zh-CN'. A toggle: the recogniser hears one at a time.
+    pushToTalkKey: 'Space', // held to listen; nothing is heard otherwise
+    confidence: 0.35, // interim results below this are ignored
+    // Fire as soon as the distinguishing token is recognised rather than waiting
+    // for the final transcript. This is what hides most of the recogniser's
+    // latency — the cast starts while you are still speaking.
+    fireOnInterim: true,
+    // How long after a cast trailing modifiers still reach it, seconds.
+    mutationWindow: 2.5,
+    // Multipliers each modifier applies to the fields it matches.
+    scaleUp: 1.85,
+    scaleDown: 0.55,
+    tempoFast: 1.6,
+    tempoSlow: 0.6,
+    durationLong: 1.9,
+    durationShort: 0.5,
+    intensityUp: 1.9,
+    intensityDown: 0.45,
+    // A field never moves further than this from its authored value, so a
+    // modifier can never push an effect somewhere it was never tuned to go.
+    clampLow: 0.15,
+    clampHigh: 4.0
   }
 };
 

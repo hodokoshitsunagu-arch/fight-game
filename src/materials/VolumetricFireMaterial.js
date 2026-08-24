@@ -772,8 +772,8 @@ export class VolumetricFireMaterial extends ShaderMaterial {
    * touched here: they describe the hull the ability has just built and are
    * written by it straight afterwards.
    */
-  sync() {
-    const c = settings.meteor;
+  sync(cfg = settings.meteor) {
+    const c = cfg;
     const g = settings.global;
     const u = this.uniforms;
 

@@ -192,8 +192,8 @@ export function createFrostFieldMaterial() {
   /**
    * @param {object} state { radius, quadSize, freeze, fade, seed }
    */
-  material.userData.sync = (state) => {
-    const c = settings.glacier;
+  material.userData.sync = (state, cfg = settings.glacier) => {
+    const c = cfg;
     const g = settings.global;
     const u = material.uniforms;
 
@@ -376,8 +376,8 @@ export function createFrostVeilMaterial() {
   /**
    * @param {object} state { fade, seed }
    */
-  material.userData.sync = (state) => {
-    const c = settings.glacier;
+  material.userData.sync = (state, cfg = settings.glacier) => {
+    const c = cfg;
     const g = settings.global;
     const u = material.uniforms;
 

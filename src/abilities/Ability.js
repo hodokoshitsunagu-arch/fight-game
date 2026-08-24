@@ -81,9 +81,48 @@ export class Ability {
     this.createParticles();
   }
 
-  /** Live settings block for this element. */
+  /**
+   * Live settings block for this element.
+   *
+   * With no overrides this is `settings[element]` itself, so the common path
+   * costs nothing. A cast carrying spoken modifiers gets a proxy that layers
+   * `_overrides` on top of that block and falls through for everything else.
+   *
+   * Because the block is re-read every frame (the one rule in `settings.js`),
+   * mutating `_overrides` mid-cast reshapes an effect that is already in the
+   * air — which is what lets a modifier heard after the spell name still land.
+   */
   get config() {
-    return settings[this.element];
+    if (!this._overrides) return settings[this.element];
+    this._proxy ??= new Proxy(
+      {},
+      {
+        get: (_, key) => this._overrides[key] ?? settings[this.element][key],
+        set: (_, key, value) => {
+          settings[this.element][key] = value;
+          return true;
+        },
+        has: (_, key) => key in settings[this.element],
+        ownKeys: () => Reflect.ownKeys(settings[this.element]),
+        getOwnPropertyDescriptor: (_, key) => ({
+          value: this._overrides[key] ?? settings[this.element][key],
+          enumerable: true,
+          configurable: true
+        })
+      }
+    );
+    return this._proxy;
+  }
+
+  /** Replace this cast's parameter overrides. Pass null to clear. */
+  setOverrides(patch) {
+    this._overrides = patch ?? null;
+  }
+
+  /** Fold more overrides into a cast already in flight. */
+  mergeOverrides(patch) {
+    if (!patch) return;
+    this._overrides = { ...(this._overrides ?? {}), ...patch };
   }
 
   get isActive() {
@@ -156,8 +195,15 @@ export class Ability {
    * @param {THREE.Vector3} origin     on the floor
    * @param {THREE.Vector3} direction  unit, flat
    * @param {number} distance          metres
+   * @param {object|null} overrides    per-cast parameter patch, or null
    */
-  spawn(origin, direction, distance) {
+  spawn(origin, direction, distance, overrides = null) {
+    // Part of the reset, and deliberately first: `onSpawn` reads `config` to
+    // size itself (spike counts, filament counts), so the overrides have to be
+    // standing before it runs. Assigning unconditionally is also what keeps a
+    // pooled instance from inheriting the previous cast's modifiers.
+    this._overrides = overrides ?? null;
+
     this.origin.set(origin.x, 0, origin.z);
     this.direction.copy(direction).setY(0).normalize();
     this.side.crossVectors(this.direction, _up).normalize();
