@@ -1,4 +1,5 @@
 import { App } from './core/App.js';
+import { settings } from './config/settings.js';
 import { LoadingScreen } from './ui/HUD.js';
 
 /**
@@ -30,6 +31,9 @@ async function boot() {
     if (app.sandbox) {
       window.voice = app.voice;
       window.cast = (transcript) => app.voice.simulate(transcript);
+      // Every tweakable value, for console tuning alongside the editor panel —
+      // e.g. `settings.environment.backgroundMode = 'panorama'`.
+      window.settings = settings;
     }
   } catch (error) {
     console.error('[boot] failed to start', error);

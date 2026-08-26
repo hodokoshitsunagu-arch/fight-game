@@ -2103,6 +2103,24 @@ export const settings = {
     rimElevation: 0.35,
     envIntensity: 0.32,
     backgroundColor: '#121820',
+
+    /* --- backdrop --------------------------------------------------- *
+     * `flat` keeps the authored void the stage was tuned against.
+     * `panorama` shows the equirectangular probe that is already loaded for
+     * image-based lighting, so switching costs no extra asset and no extra
+     * draw call — the background is a full-screen pass at infinite distance,
+     * which also means it never parallaxes as the character walks.
+     */
+    backgroundMode: 'flat', // 'flat' | 'panorama'
+    backgroundIntensity: 0.85, // exposure of the backdrop alone
+    // Blur hides the seams of a low-resolution probe and stops a busy sky from
+    // competing with the effects, which are the thing worth looking at.
+    backgroundBlur: 0.06,
+    backgroundRotation: 0, // degrees, to swing the panorama's sun onto the scene's
+    // Fog is what welds the floor to the backdrop. Against the flat void the
+    // authored colour matches exactly; against a panorama it has to come from
+    // the panorama's own horizon or a hard seam appears at the floor edge.
+    fogFromHorizon: true,
     // Fog is pulled well back so it only dissolves the far edge of the floor into
     // the backdrop rather than sitting on top of the action. Toggle and range are
     // both live in the editor (Environment → Backdrop, fog & dust).

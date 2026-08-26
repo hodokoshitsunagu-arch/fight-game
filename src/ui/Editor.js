@@ -1612,6 +1612,22 @@ export class Editor {
     const e = settings.environment;
     const R = Editor.range;
 
+    /*
+     * Backdrop.
+     *
+     * `panorama` reuses the equirectangular probe already loaded for lighting,
+     * so it costs no extra asset and no extra draw call. It is off by default:
+     * the stage was tuned against the flat void, and a busy sky competes with
+     * the effects. This folder is here to judge that trade-off live rather than
+     * by argument.
+     */
+    const backdrop = folder.addFolder('Backdrop');
+    backdrop.add(e, 'backgroundMode', ['flat', 'panorama']).name('mode');
+    R(backdrop, e, 'backgroundIntensity', 0, 3, 0.01, 'exposure');
+    R(backdrop, e, 'backgroundBlur', 0, 1, 0.01, 'blur');
+    R(backdrop, e, 'backgroundRotation', 0, 360, 1, 'rotation (deg)');
+    backdrop.add(e, 'fogFromHorizon').name('fog from horizon');
+
     R(folder, e, 'sunIntensity', 0, 8, 0.01, 'key intensity');
     folder.addColor(e, 'sunColor').name('key colour');
     R(folder, e, 'sunAzimuth', 0, Math.PI * 2, 0.01, 'key azimuth');

@@ -7,7 +7,10 @@ import {
   HemisphereLight,
   DirectionalLight,
   EquirectangularReflectionMapping,
-  PMREMGenerator
+  PMREMGenerator,
+  DataUtils,
+  MathUtils,
+  LinearSRGBColorSpace
 } from 'three';
 import { settings } from '../config/settings.js';
 import { getColor } from '../utils/color.js';
@@ -130,11 +133,68 @@ export class Environment {
     this.scene.environmentIntensity = settings.environment.envIntensity;
 
     // Kept as an equirect source for the cheap fake reflections inside the
-    // custom water / wind shaders (they cannot use the PMREM cube directly).
+    // custom water / wind shaders (they cannot use the PMREM cube directly) —
+    // and, now, as the panorama backdrop.
     this.equirect = hdrTexture;
+    this._horizonColor = this._sampleHorizon(hdrTexture);
 
     this._pmrem.dispose();
     this._pmrem = null;
+  }
+
+  /**
+   * Average colour of the probe's horizon band.
+   *
+   * This is what the fog fades the floor into. Against the flat void the
+   * authored fog colour matches the backdrop exactly and the floor edge
+   * dissolves; against a panorama the same colour leaves a visible ring where
+   * the ground stops, because the two no longer agree. Reading the horizon off
+   * the panorama itself keeps that join invisible whatever probe is loaded.
+   *
+   * Samples are clamped before averaging so a sun sitting on the horizon does
+   * not drag the whole result to white.
+   *
+   * @returns {{r:number,g:number,b:number}|null} linear RGB, or null if the
+   *   texture cannot be read on the CPU (a compressed or GPU-only source).
+   */
+  _sampleHorizon(texture) {
+    const image = texture?.image;
+    const data = image?.data;
+    if (!data || !image.width || !image.height) return null;
+
+    const { width, height } = image;
+    const components = Math.round(data.length / (width * height));
+    if (components < 3) return null;
+
+    const half = data instanceof Uint16Array;
+    // A band either side of the equator, which is the horizon in an
+    // equirectangular projection.
+    const band = Math.max(1, Math.round(height * 0.05));
+    const start = Math.max(0, Math.round(height / 2 - band / 2));
+    const stride = Math.max(1, Math.round(width / 256));
+
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let n = 0;
+
+    for (let y = start; y < Math.min(height, start + band); y++) {
+      for (let x = 0; x < width; x += stride) {
+        const i = (y * width + x) * components;
+        const cr = half ? DataUtils.fromHalfFloat(data[i]) : data[i];
+        const cg = half ? DataUtils.fromHalfFloat(data[i + 1]) : data[i + 1];
+        const cb = half ? DataUtils.fromHalfFloat(data[i + 2]) : data[i + 2];
+        if (!Number.isFinite(cr) || !Number.isFinite(cg) || !Number.isFinite(cb)) continue;
+        // The sun is orders of magnitude brighter than the sky it sits in.
+        r += Math.min(cr, 4);
+        g += Math.min(cg, 4);
+        b += Math.min(cb, 4);
+        n++;
+      }
+    }
+
+    if (!n) return null;
+    return { r: r / n, g: g / n, b: b / n };
   }
 
   /**
@@ -200,10 +260,36 @@ export class Environment {
 
     this._bgColor.copy(getColor(env.backgroundColor));
 
+    /* ---- backdrop ---- */
+    const panorama = env.backgroundMode === 'panorama' && this.equirect;
+    // Assigning the same object every frame is a no-op in three; only a real
+    // change touches the renderer.
+    this.scene.background = panorama ? this.equirect : this._bgColor;
+    this.scene.backgroundIntensity = panorama ? env.backgroundIntensity : 1;
+    this.scene.backgroundBlurriness = panorama ? env.backgroundBlur : 0;
+    if (panorama) {
+      this.scene.backgroundRotation.y = MathUtils.degToRad(env.backgroundRotation);
+    }
+
     // Attaching / detaching the fog flips the FOG shader define, so the switch
     // costs one recompile — fine for an editor toggle, and free while it stays on.
     this.scene.fog = env.fogEnabled ? this._fog : null;
-    this._fog.color.copy(getColor(env.fogColor));
+
+    if (panorama && env.fogFromHorizon && this._horizonColor) {
+      // Match the fog to the backdrop it fades into, scaled by the same
+      // exposure the backdrop is drawn at, so the floor edge stays invisible.
+      const h = this._horizonColor;
+      const k = env.backgroundIntensity;
+      this._fog.color.setRGB(
+        Math.min(1, h.r * k),
+        Math.min(1, h.g * k),
+        Math.min(1, h.b * k),
+        LinearSRGBColorSpace
+      );
+    } else {
+      this._fog.color.copy(getColor(env.fogColor));
+    }
+
     this._fog.near = env.fogNear;
     this._fog.far = env.fogFar;
   }
