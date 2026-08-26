@@ -639,14 +639,32 @@ export class App {
          * panorama is drawn flat, which is the sensible thing to do rather than
          * failing a boot over an optional effect.
          */
-        const depthUrl = settings.environment.depthUrl
-          || settings.environment.panoramaUrl.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth$1$2');
-        try {
-          this.environment.setDepthMap(await assets.loadTexture(depthUrl));
-          settings.environment.parallax = true;
-        } catch {
-          console.info('[env] no depth map at', depthUrl, '— backdrop stays flat');
+        const base = settings.environment.panoramaUrl;
+        /*
+         * A depth map is very often a PNG even when the panorama is a JPEG,
+         * because JPEG's block compression shows up in geometry as wobble along
+         * every silhouette. So the sibling is tried in its own format and as a
+         * PNG before giving up.
+         */
+        const candidates = settings.environment.depthUrl
+          ? [settings.environment.depthUrl]
+          : [
+              base.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth$1$2'),
+              base.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth.png$2')
+            ];
+
+        let loaded = false;
+        for (const url of candidates) {
+          try {
+            this.environment.setDepthMap(await assets.loadTexture(url));
+            settings.environment.parallax = true;
+            loaded = true;
+            break;
+          } catch {
+            /* try the next spelling */
+          }
         }
+        if (!loaded) console.info('[env] no depth map beside', base, '— backdrop stays flat');
       } catch (error) {
         console.warn('[env] backdrop failed to load, falling back to the probe', error);
       }
