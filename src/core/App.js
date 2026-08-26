@@ -717,8 +717,12 @@ export class App {
         const candidates = settings.environment.depthUrl
           ? [settings.environment.depthUrl]
           : [
-              base.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth$1$2'),
-              base.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth.png$2')
+              // PNG first: a depth map is nearly always one, because JPEG's
+              // block compression shows up in geometry as wobble along every
+              // silhouette. Probing the panorama's own extension first meant a
+              // 404 in the console on every single boot.
+              base.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth.png$2'),
+              base.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth$1$2')
             ];
 
         let loaded = false;
@@ -758,7 +762,21 @@ export class App {
       this.enemies.setCompileVisible(false);
     }
 
-    this.loading.setProgress(1, 'Ready');
+    /*
+     * The loaders may still be resolving textures against a blob URL after
+     * their own promise has resolved, so the URLs are only released once every
+     * queued request has settled — revoking earlier turns a texture into a
+     * silent 404.
+     */
+    await assets.settled();
+    assets.releaseBlobs();
+
+    const { cached, fetched, bytes } = assets.stats;
+    const mb = (bytes / 1024 / 1024).toFixed(1);
+    this.loading.setProgress(1, cached && !fetched
+      ? `Ready — ${mb}MB from cache`
+      : `Ready — ${cached} cached, ${fetched} downloaded`);
+    console.info(`[assets] ${cached} from cache, ${fetched} downloaded, ${mb}MB total`);
     this.loading.hide();
 
     this.start();

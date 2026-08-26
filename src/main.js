@@ -1,5 +1,6 @@
 import { App } from './core/App.js';
 import { settings } from './config/settings.js';
+import { assetCacheStats, clearAssetCache } from './loaders/AssetCache.js';
 import { LoadingScreen } from './ui/HUD.js';
 
 /**
@@ -34,6 +35,23 @@ async function boot() {
       // Every tweakable value, for console tuning alongside the editor panel —
       // e.g. `settings.environment.backgroundMode = 'panorama'`.
       window.settings = settings;
+
+      /*
+       * Asset cache controls.
+       *
+       * `clear()` matters because the cache is keyed by URL and Vite does not
+       * hash files in `public/` — a replaced model or panorama keeps its name,
+       * so there is nothing for the cache to notice. Bumping `VERSION` in
+       * AssetCache.js is the other way; this is the one that does not need a
+       * rebuild.
+       */
+      window.assetCache = {
+        stats: () => assetCacheStats().then((s) => ({
+          ...s,
+          megabytes: +(s.bytes / 1024 / 1024).toFixed(1)
+        })),
+        clear: () => clearAssetCache().then((ok) => ok ? 'cleared — reload to re-fetch' : 'unavailable')
+      };
     }
   } catch (error) {
     console.error('[boot] failed to start', error);
