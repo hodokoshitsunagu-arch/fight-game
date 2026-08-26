@@ -411,25 +411,54 @@ export class App {
     Object.assign(settings.environment, {
       // Trim the floor to a plaza. Anything further was invisible under fog and
       // is now actively in the way of the city.
-      floorScale: 0.14,
+      floorScale: 0.1,
       // Fog has to finish *before* the floor's edge, or the edge shows as a
       // hard arc and the player appears to stand on a disc.
-      fogNear: 4,
+      fogNear: 6,
       fogFar: 18,
       // Read the fog colour off the road rather than the horizon, so the floor
       // fades into the street instead of into an overcast sky.
       fogHorizonOffset: 0.1,
       // Close enough to parallax convincingly, far enough to clear the floor.
-      parallaxWorldScale: 6,
+      parallaxWorldScale: 4.5,
       backgroundIntensity: 1.1,
       // The void lit characters from behind; a lit city needs them to read as
       // more than silhouettes.
       ambientIntensity: 0.4
     });
 
-    settings.camera.distance = 13.5;
-    // Nearly level, which is what puts the crossing in frame at all.
-    this.rig.setOrbit(1.34, 0.6);
+    /*
+     * Take the floor's colour from the panorama's own road.
+     *
+     * Fog hides where the floor stops, but only if the floor is already about
+     * the right colour underneath — fading a slate-blue plaza into a wet-asphalt
+     * street just produces a slate-blue smear. Matching the material first is
+     * what turns the join from "a dark disc in front of a photo" into one
+     * surface. The tint is lifted slightly so the floor keeps its own variation
+     * rather than going flat.
+     */
+    const road = this.environment.roadColour();
+    if (road) {
+      // Lifted off the raw sample: the road in the panorama is already lit, and
+      // the floor still has to survive this scene's own lighting on top.
+      settings.environment.floorColor = App._lighten(road, 1.3);
+      settings.environment.floorTint = App._lighten(road, 1.9);
+    }
+
+    settings.camera.distance = 14;
+    // Tilted down enough to hold the crossing itself in frame, not just the
+    // skyline above it.
+    this.rig.setOrbit(1.12, 0.6);
+  }
+
+  /** `#rrggbb` scaled in sRGB, clamped. */
+  static _lighten(hex, gain) {
+    const n = parseInt(hex.slice(1), 16);
+    const scale = (shift) =>
+      Math.min(255, Math.round(((n >> shift) & 255) * gain))
+        .toString(16)
+        .padStart(2, '0');
+    return `#${scale(16)}${scale(8)}${scale(0)}`;
   }
 
   /**

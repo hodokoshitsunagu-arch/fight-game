@@ -21,15 +21,20 @@ const puppeteer = require('puppeteer');
 const SRC = process.argv[2];
 const OUT = process.argv[3];
 if (!SRC || !OUT) {
-  console.error('usage: node tools/process-panorama.mjs <raw.jpg> <public/hdri/name>');
+  console.error('usage: node tools/process-panorama.mjs <raw.jpg> <public/hdri/name> [eyeHeight=2.2] [ringMetres=38]');
   process.exit(1);
 }
 
 const W = 4096;
 const H = 2048;
-const EYE = 2.2;    // street-level eye height, metres — the shot is from the crossing
+// Eye height the panorama was shot from, metres. It sets the ground distances,
+// so it has to match the prompt: a street-level shot is ~2, an overhead one is
+// whatever height was asked for.
+const EYE = Number(process.argv[4] ?? 2.2);
 const NEAR = 4.0;   // must match settings.environment.depthNear
 const FAR = 170.0;  // must match settings.environment.depthFar
+// Distance to the facades ringing the square.
+const RING_M = Number(process.argv[5] ?? 38);
 
 const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
 const page = await browser.newPage();
@@ -37,7 +42,7 @@ await page.goto('about:blank');
 
 const dataUrl = `data:image/jpeg;base64,${fs.readFileSync(SRC).toString('base64')}`;
 
-const result = await page.evaluate(async ({ dataUrl, W, H, EYE, NEAR, FAR }) => {
+const result = await page.evaluate(async ({ dataUrl, W, H, EYE, NEAR, FAR, RING_M }) => {
   const img = await new Promise((resolve, reject) => {
     const i = new Image();
     i.onload = () => resolve(i);
@@ -147,7 +152,7 @@ const result = await page.evaluate(async ({ dataUrl, W, H, EYE, NEAR, FAR }) => 
   }
 
   /* ---- 4. build the depth map ---- */
-  const RING = 38;   // metres to the facades across the crossing
+  const RING = RING_M;   // metres to the facades across the crossing
   const SKY = FAR;
 
   const depth = document.createElement('canvas');
@@ -178,7 +183,18 @@ const result = await page.evaluate(async ({ dataUrl, W, H, EYE, NEAR, FAR }) => 
          * seen is the far part. Clamping the range keeps the geometry stable
          * and costs nothing that was ever visible.
          */
-        distance = Math.max(Math.min(EYE / -sinPhi, RING), RING * 0.65);
+        /*
+         * The floor stops the range from collapsing, not the ceiling.
+         *
+         * From street level the road underfoot is two metres away and the road
+         * at a grazing angle is hundreds, and a sphere with 128 rows of latitude
+         * smears that into streaks — so the near end is clamped. From an
+         * overhead capture the nearest ground is already tens of metres away and
+         * nothing needs clamping, which is why the bound is tied to the eye
+         * height rather than fixed. Capping the far end as well, as an earlier
+         * version did, flattened the road into a ring and pushed it out of frame.
+         */
+        distance = Math.min(Math.max(EYE / -sinPhi, Math.max(EYE, 12)), FAR);
       } else {
         const roof = roofline[Math.floor((x / W) * SW)] / SH; // 0..1 from top
         const roofPhi = (1 - 2 * roof) * (Math.PI / 2);
@@ -202,7 +218,7 @@ const result = await page.evaluate(async ({ dataUrl, W, H, EYE, NEAR, FAR }) => 
     colour: colour.toDataURL('image/jpeg', 0.92),
     depth: depth.toDataURL('image/png')
   };
-}, { dataUrl, W, H, EYE, NEAR, FAR });
+}, { dataUrl, W, H, EYE, NEAR, FAR, RING_M });
 
 const save = (dataUri, path) => {
   fs.writeFileSync(path, Buffer.from(dataUri.split(',')[1], 'base64'));

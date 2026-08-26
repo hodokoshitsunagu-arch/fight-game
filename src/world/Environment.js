@@ -169,7 +169,38 @@ export class Environment {
       && !(texture.image?.data instanceof Uint16Array || texture.image?.data instanceof Float32Array);
     const sampled = this._sampleHorizon(this._backdrop) ?? this._sampleCanvasHorizon(this._backdrop);
     if (sampled) this._horizonColor = sampled;
+    this._fogRoad = null;
     this.skyDome.setTextures(this._backdrop, this._depthMap ?? null);
+  }
+
+  /**
+   * The backdrop's road colour, as a `#rrggbb` string.
+   *
+   * The play floor and the panorama's street are two different surfaces that
+   * have to read as one material. Fog hides the join, but only if the floor is
+   * already about the right colour underneath — fade a slate-blue plaza into a
+   * wet-asphalt street and the fog just makes a slate-blue smear.
+   *
+   * Sampled well below the horizon, which in an equirectangular image is the
+   * ground close to the camera: the part that is genuinely the same surface the
+   * player is standing on, rather than the haze-tinted far street.
+   *
+   * @param {number} offset fraction of image height below the equator
+   * @returns {string|null} null when the backdrop's pixels cannot be read
+   */
+  roadColour(offset = 0.28) {
+    const backdrop = this._backdrop ?? this.equirect;
+    // 0.06 linear is about sRGB 70: dark asphalt passes, white paint does not.
+    const linear = this._sampleHorizon(backdrop, offset, 0.06)
+      ?? this._sampleCanvasHorizon(backdrop, offset, 0.06);
+    if (!linear) return null;
+
+    // Back to sRGB, which is the space `floorColor` and friends are written in.
+    const channel = (v) => {
+      const encoded = Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2);
+      return Math.round(encoded * 255).toString(16).padStart(2, '0');
+    };
+    return `#${channel(linear.r)}${channel(linear.g)}${channel(linear.b)}`;
   }
 
   /**
@@ -179,6 +210,7 @@ export class Environment {
    */
   setDepthMap(texture) {
     this._depthMap = texture ?? null;
+    this._fogRoad = null;
     this.skyDome.setTextures(this._backdrop ?? this.equirect, this._depthMap);
   }
 
@@ -188,7 +220,7 @@ export class Environment {
    * only way to read those pixels back, so it is done once, at a size that
    * costs nothing.
    */
-  _sampleCanvasHorizon(texture) {
+  _sampleCanvasHorizon(texture, offset = settings.environment.fogHorizonOffset, ceiling = 1) {
     const image = texture?.image;
     if (!image || typeof document === 'undefined') return null;
     if (!(image.width > 0 && image.height > 0)) return null;
@@ -203,7 +235,7 @@ export class Environment {
       ctx.drawImage(image, 0, 0, w, h);
 
       const band = Math.max(1, Math.round(h * 0.05));
-      const centre = h / 2 + h * settings.environment.fogHorizonOffset;
+      const centre = h / 2 + h * offset;
       const start = Math.max(0, Math.min(h - band, Math.round(centre - band / 2)));
       const { data } = ctx.getImageData(0, start, w, band);
 
@@ -213,9 +245,11 @@ export class Environment {
       const n = data.length / 4;
       for (let i = 0; i < data.length; i += 4) {
         // sRGB -> linear, so it matches the space the fog colour is set in.
-        r += (data[i] / 255) ** 2.2;
-        g += (data[i + 1] / 255) ** 2.2;
-        b += (data[i + 2] / 255) ** 2.2;
+        // Road markings are paint, not surface. Clamping each sample keeps a
+        // crossing full of white stripes from reporting the asphalt as grey.
+        r += Math.min((data[i] / 255) ** 2.2, ceiling);
+        g += Math.min((data[i + 1] / 255) ** 2.2, ceiling);
+        b += Math.min((data[i + 2] / 255) ** 2.2, ceiling);
       }
       return { r: r / n, g: g / n, b: b / n };
     } catch {
@@ -245,7 +279,7 @@ export class Environment {
    * @returns {{r:number,g:number,b:number}|null} linear RGB, or null if the
    *   texture cannot be read on the CPU (a compressed or GPU-only source).
    */
-  _sampleHorizon(texture) {
+  _sampleHorizon(texture, offset = settings.environment.fogHorizonOffset, ceiling = 4) {
     const image = texture?.image;
     const data = image?.data;
     if (!data || !image.width || !image.height) return null;
@@ -259,7 +293,7 @@ export class Environment {
     // equirectangular projection.
     const band = Math.max(1, Math.round(height * 0.05));
     // Offset below the equator: see `fogHorizonOffset`.
-    const centre = height / 2 + height * settings.environment.fogHorizonOffset;
+    const centre = height / 2 + height * offset;
     const start = Math.max(0, Math.min(height - band, Math.round(centre - band / 2)));
     const stride = Math.max(1, Math.round(width / 256));
 
@@ -276,9 +310,9 @@ export class Environment {
         const cb = half ? DataUtils.fromHalfFloat(data[i + 2]) : data[i + 2];
         if (!Number.isFinite(cr) || !Number.isFinite(cg) || !Number.isFinite(cb)) continue;
         // The sun is orders of magnitude brighter than the sky it sits in.
-        r += Math.min(cr, 4);
-        g += Math.min(cg, 4);
-        b += Math.min(cb, 4);
+        r += Math.min(cr, ceiling);
+        g += Math.min(cg, ceiling);
+        b += Math.min(cb, ceiling);
         n++;
       }
     }
@@ -391,7 +425,19 @@ export class Environment {
     // costs one recompile — fine for an editor toggle, and free while it stays on.
     this.scene.fog = env.fogEnabled ? this._fog : null;
 
-    if (panorama && env.fogFromHorizon && this._horizonColor) {
+    /*
+     * On a grounded backdrop the floor fades into the road, so the fog has to be
+     * the road's colour — the same sample the floor's own material takes, taken
+     * the same way. Reading the horizon line instead picks up sky and crowd
+     * lights, and the far floor turns pale against the near floor: a mound.
+     *
+     * A sky-only probe has no road, and there the horizon is the right answer.
+     */
+    if (parallax && env.fogFromHorizon) {
+      this._fogRoad ??= this.roadColour();
+      if (this._fogRoad) this._fog.color.copy(getColor(this._fogRoad));
+      else this._fog.color.copy(getColor(env.fogColor));
+    } else if (panorama && env.fogFromHorizon && this._horizonColor) {
       // Match the fog to the backdrop it fades into, scaled by the same
       // exposure the backdrop is drawn at, so the floor edge stays invisible.
       const h = this._horizonColor;
