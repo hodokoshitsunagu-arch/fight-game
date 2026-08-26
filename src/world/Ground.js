@@ -192,7 +192,25 @@ export class Ground {
    */
   _applyTiling() {
     if (!this.textures) return;
-    const repeat = PLANE_SIZE / Math.max(0.1, settings.environment.floorTextureScale);
+
+    /*
+     * The floor is 400 metres across but fog swallows it by 135, so most of it
+     * is invisible surface that still occludes. That is fine against a flat
+     * void and wrong against a panorama backdrop, where the far floor hides the
+     * city that is meant to be behind it.
+     *
+     * Scaling the mesh trims it without rebuilding geometry. Texel density is
+     * held by folding the same factor into the repeat, so shrinking the floor
+     * does not stretch its texture.
+     */
+    const scale = Math.max(0.05, settings.environment.floorScale);
+    if (scale !== this._scale) {
+      this._scale = scale;
+      this.mesh.scale.setScalar(scale);
+      this.mesh.updateMatrix();
+    }
+
+    const repeat = (PLANE_SIZE * scale) / Math.max(0.1, settings.environment.floorTextureScale);
     if (repeat === this._repeat) return;
     this._repeat = repeat;
     for (const texture of Object.values(this.textures)) texture.repeat.set(repeat, repeat);

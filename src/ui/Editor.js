@@ -1623,11 +1623,20 @@ export class Editor {
      */
     const backdrop = folder.addFolder('Backdrop');
     backdrop.add(e, 'backgroundMode', ['flat', 'panorama']).name('mode');
+    R(backdrop, e, 'floorScale', 0.1, 1, 0.01, 'floor size (trim to reveal)');
     R(backdrop, e, 'backgroundIntensity', 0, 3, 0.01, 'exposure');
     R(backdrop, e, 'backgroundBlur', 0, 1, 0.01, 'blur');
     R(backdrop, e, 'backgroundRotation', 0, 360, 1, 'rotation (deg)');
     R(backdrop, e, 'backgroundTilt', -20, 20, 0.5, 'tilt (deg)');
     backdrop.add(e, 'fogFromHorizon').name('fog from horizon');
+
+    // Parallax only does anything with a depth map loaded; see App.load.
+    const parallax = backdrop.addFolder('Parallax (needs depth map)');
+    parallax.add(e, 'parallax').name('enabled');
+    R(parallax, e, 'parallaxScale', 0, 2, 0.01, 'strength');
+    R(parallax, e, 'parallaxWorldScale', 1, 30, 0.5, 'world scale (push out)');
+    R(parallax, e, 'depthNear', 0.5, 20, 0.1, 'disparity near (m)');
+    R(parallax, e, 'depthFar', 50, 1000, 10, 'far clamp (m)');
 
     R(folder, e, 'sunIntensity', 0, 8, 0.01, 'key intensity');
     folder.addColor(e, 'sunColor').name('key colour');

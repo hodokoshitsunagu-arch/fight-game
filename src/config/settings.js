@@ -2111,6 +2111,12 @@ export const settings = {
      * draw call — the background is a full-screen pass at infinite distance,
      * which also means it never parallaxes as the character walks.
      */
+    /*
+     * How much of the 400m floor plane to keep. Fog hides it past ~135m, so
+     * anything beyond that is invisible surface that still occludes whatever is
+     * behind it — which against a panorama backdrop is the whole city.
+     */
+    floorScale: 1.0,
     backgroundMode: 'flat', // 'flat' | 'panorama'
     /*
      * Where the backdrop comes from.
@@ -2129,6 +2135,39 @@ export const settings = {
     // Vertical trim, degrees. A generated panorama is not always level, and a
     // horizon a few degrees off reads immediately as wrong.
     backgroundTilt: 0,
+
+    /* --- parallax ---------------------------------------------------- *
+     * A panorama drawn as `scene.background` sits at infinite distance, so it
+     * cannot shift as the camera orbits — which is exactly what makes a city
+     * backdrop read as painted-on. With a depth map the same panorama is drawn
+     * as displaced geometry instead, and near blocks sweep past far ones for
+     * free. Costs one draw call and ~65k triangles; see `SkyDome`.
+     *
+     * Off by default: it is only worth its cost with a depth map that matches
+     * the panorama.
+     */
+    parallax: false,
+    // 0 flattens the scene back onto the far shell, 1 is the depth map as
+    // measured. Above 1 exaggerates, which reads as a miniature.
+    parallaxScale: 1.0,
+    /*
+     * How far out to place the panorama's world.
+     *
+     * The panorama is authored around a 30-metre city; the play floor reaches
+     * 200 metres and would bury it. Scaling distances uniformly moves the city
+     * clear of the floor without altering a pixel of it — angular size does not
+     * change, because it is the same image. The cost is parallax, which falls
+     * off with distance, so this is the dial that trades one against the other.
+     */
+    parallaxWorldScale: 9.0,
+    // Empty derives `<panorama>_depth.<ext>` from `panoramaUrl`.
+    depthUrl: '',
+    // Must match the encoder: disparity = near / distance.
+    depthNear: 4.0,
+    // The generator's road fades out around 170m, so anything past this is
+    // sky. Kept tight because it also sets where the shell sits, and the camera
+    // has to be able to see that far.
+    depthFar: 170.0,
     backgroundIntensity: 0.85, // exposure of the backdrop alone
     // Blur hides the seams of a low-resolution probe and stops a busy sky from
     // competing with the effects, which are the thing worth looking at.

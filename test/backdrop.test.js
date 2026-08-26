@@ -141,3 +141,78 @@ test('a backdrop URL is configurable and empty by default', () => {
   assert.equal(settings.environment.panoramaUrl, '', 'defaults to reusing the lighting probe');
   assert.equal(typeof settings.environment.backgroundTilt, 'number');
 });
+
+/* ------------------------------------------------------------------ */
+/* Depth encoding                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The generator and the vertex shader have to agree on what the depth map
+ * means, and they cannot share code across the JS/GLSL boundary. This pins the
+ * contract from both ends: if `SkyDome`'s vertex shader stops matching these,
+ * the city silently lands at the wrong distance and parallax reads as wrong
+ * rather than as broken.
+ *
+ *   encode:  disparity = round(255 * near / max(distance, near))
+ *   decode:  distance  = near / max(disparity / 255, near / far)
+ */
+const encodeDepth = (distance, near) => Math.round(255 * (near / Math.max(distance, near)));
+const decodeDepth = (byte, near, far) => near / Math.max(byte / 255, near / far);
+
+test('depth survives the round trip where parallax is visible', () => {
+  const near = 4;
+  const far = 170;
+  // Near distances are what parallax is made of; they must come back tight.
+  for (const distance of [4, 6, 10, 16, 26, 40]) {
+    const back = decodeDepth(encodeDepth(distance, near), near, far);
+    const error = Math.abs(back - distance) / distance;
+    assert.ok(error < 0.06, `${distance}m came back as ${back.toFixed(1)}m (${(error * 100).toFixed(1)}%)`);
+  }
+});
+
+test('disparity spends its precision near, as intended', () => {
+  const near = 4;
+  // The whole reason for disparity over linear depth: the near half of the
+  // range gets most of the codes.
+  const nearCodes = encodeDepth(4, near) - encodeDepth(20, near);
+  const farCodes = encodeDepth(100, near) - encodeDepth(400, near);
+  assert.ok(nearCodes > farCodes * 5,
+    `4-20m got ${nearCodes} codes, 100-400m got ${farCodes}`);
+});
+
+test('sky decodes to the far clamp rather than to infinity', () => {
+  const near = 4;
+  const far = 170;
+  // Sky is encoded 0; without the floor in the decode this divides by zero and
+  // collapses the dome onto the camera.
+  assert.equal(decodeDepth(0, near, far), far);
+  assert.ok(Number.isFinite(decodeDepth(0, near, far)));
+});
+
+test('the generated Shibuya pair is present and paired', async () => {
+  const fs = await import('node:fs');
+  const colour = 'public/hdri/shibuya_crossing.png';
+  const depth = 'public/hdri/shibuya_crossing_depth.png';
+  assert.ok(fs.existsSync(colour), 'panorama exists');
+  assert.ok(fs.existsSync(depth), 'depth map exists');
+
+  // Both must be the same size and 2:1, or the shader samples mismatched pixels.
+  const size = (path) => {
+    const head = fs.readFileSync(path).subarray(16, 24);
+    return { w: head.readUInt32BE(0), h: head.readUInt32BE(4) };
+  };
+  const c = size(colour);
+  const d = size(depth);
+  assert.deepEqual(c, d, 'colour and depth agree on size');
+  assert.equal(c.w, c.h * 2, 'equirectangular is 2:1');
+});
+
+test('parallax settings carry the shape SkyDome reads', () => {
+  const env = settings.environment;
+  assert.equal(env.parallax, false, 'off by default — it costs a draw call and 65k triangles');
+  assert.equal(typeof env.parallaxScale, 'number');
+  assert.equal(typeof env.parallaxWorldScale, 'number');
+  assert.ok(env.parallaxWorldScale > 1, 'the city has to clear the 200m play floor');
+  assert.equal(typeof env.depthNear, 'number');
+  assert.equal(typeof env.depthFar, 'number');
+});

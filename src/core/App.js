@@ -629,6 +629,24 @@ export class App {
         // A backdrop was asked for explicitly; show it rather than making the
         // caller also flip the mode.
         settings.environment.backgroundMode = 'panorama';
+
+        /*
+         * The depth map that turns the backdrop into geometry.
+         *
+         * Derived from the panorama's own name unless one is given, because
+         * generators emit the pair together — `sky.png` / `sky_depth.png`. A
+         * missing depth map is not an error: parallax simply stays off and the
+         * panorama is drawn flat, which is the sensible thing to do rather than
+         * failing a boot over an optional effect.
+         */
+        const depthUrl = settings.environment.depthUrl
+          || settings.environment.panoramaUrl.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth$1$2');
+        try {
+          this.environment.setDepthMap(await assets.loadTexture(depthUrl));
+          settings.environment.parallax = true;
+        } catch {
+          console.info('[env] no depth map at', depthUrl, '— backdrop stays flat');
+        }
       } catch (error) {
         console.warn('[env] backdrop failed to load, falling back to the probe', error);
       }

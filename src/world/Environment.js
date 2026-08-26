@@ -14,6 +14,7 @@ import {
 } from 'three';
 import { settings } from '../config/settings.js';
 import { getColor } from '../utils/color.js';
+import { SkyDome } from './SkyDome.js';
 import { frame } from '../core/FrameUniforms.js';
 import { patchOnBeforeCompile } from '../utils/shaderPatch.js';
 
@@ -55,6 +56,14 @@ export class Environment {
     // Flat dark backdrop, kept in a Color we own so the editor can drive it.
     this._bgColor = getColor(settings.environment.backgroundColor).clone();
     this.scene.background = this._bgColor;
+
+    /*
+     * The parallax backdrop. Built up front and left invisible: it is one mesh
+     * and one material, and creating it lazily would mean a shader compile on
+     * the frame someone flips the toggle.
+     */
+    this.skyDome = new SkyDome();
+    this.scene.add(this.skyDome.object3D);
     // Kept in a Fog we own so the editor can drive its colour and range, and so
     // it can be switched off entirely by detaching it from the scene.
     this._fog = new Fog(
@@ -160,6 +169,17 @@ export class Environment {
       && !(texture.image?.data instanceof Uint16Array || texture.image?.data instanceof Float32Array);
     const sampled = this._sampleHorizon(this._backdrop) ?? this._sampleCanvasHorizon(this._backdrop);
     if (sampled) this._horizonColor = sampled;
+    this.skyDome.setTextures(this._backdrop, this._depthMap ?? null);
+  }
+
+  /**
+   * Attach the depth map that turns the backdrop into geometry.
+   * Without one the dome is just a distant shell, indistinguishable from the
+   * flat background — so parallax silently stays off rather than half-working.
+   */
+  setDepthMap(texture) {
+    this._depthMap = texture ?? null;
+    this.skyDome.setTextures(this._backdrop ?? this.equirect, this._depthMap);
   }
 
   /**
@@ -324,12 +344,36 @@ export class Environment {
     /* ---- backdrop ---- */
     const backdrop = this._backdrop ?? this.equirect;
     const panorama = env.backgroundMode === 'panorama' && backdrop;
+    // Parallax needs a depth map; without one the dome would just be a more
+    // expensive way to draw the same flat sky.
+    const parallax = panorama && env.parallax && Boolean(this._depthMap);
+    this.skyDome.sync(env, parallax);
+
+    /*
+     * The dome has to fit inside the view frustum.
+     *
+     * The stage ships with `camera.far = 400`, which is generous for a 200-metre
+     * floor and nowhere near enough for a city pushed out past it — the sky
+     * shell lands beyond the far plane and is clipped away entirely, which on
+     * screen is indistinguishable from the feature not working. So the camera is
+     * extended to cover whatever the dome needs, and put back when it is off,
+     * rather than shipping a far plane sized for a mode nobody may turn on.
+     */
+    this._baseFar ??= this.camera.far;
+    const wantedFar = parallax ? Math.max(this._baseFar, this.skyDome.farDistance * 1.06) : this._baseFar;
+    if (Math.abs(this.camera.far - wantedFar) > 1) {
+      this.camera.far = wantedFar;
+      this.camera.updateProjectionMatrix();
+    }
+
+    // With the dome on, the flat colour stays behind it as the clear — the dome
+    // covers every pixel, so this is only ever seen if it fails to draw.
     // Assigning the same object every frame is a no-op in three; only a real
     // change touches the renderer.
-    this.scene.background = panorama ? backdrop : this._bgColor;
-    this.scene.backgroundIntensity = panorama ? env.backgroundIntensity : 1;
-    this.scene.backgroundBlurriness = panorama ? env.backgroundBlur : 0;
-    if (panorama) {
+    this.scene.background = panorama && !parallax ? backdrop : this._bgColor;
+    this.scene.backgroundIntensity = panorama && !parallax ? env.backgroundIntensity : 1;
+    this.scene.backgroundBlurriness = panorama && !parallax ? env.backgroundBlur : 0;
+    if (panorama && !parallax) {
       this.scene.backgroundRotation.y = MathUtils.degToRad(env.backgroundRotation);
       this.scene.backgroundRotation.x = MathUtils.degToRad(env.backgroundTilt);
     }
@@ -358,6 +402,8 @@ export class Environment {
   }
 
   dispose() {
+    this.skyDome.dispose();
+    this._depthMap?.dispose();
     this._envMap?.dispose();
     this.equirect?.dispose();
     this.sun.shadow.dispose();
