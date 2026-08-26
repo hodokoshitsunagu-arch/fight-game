@@ -394,6 +394,45 @@ export class App {
   }
 
   /**
+   * Re-stage the scene for a grounded panorama backdrop.
+   *
+   * The stage was tuned against a flat void: a 400-metre floor, fog reaching
+   * 135, and a camera looking down at it, because there was nothing else to
+   * look at. None of that survives contact with a backdrop that has a street
+   * and a skyline in it — the floor buries the city, the fog paints it out, and
+   * the camera points away from it.
+   *
+   * These are the values a panorama wants, applied only when one actually
+   * loads, so the flat stage keeps the framing it was authored with. Every one
+   * of them is still a control in the editor; this is a starting point, not a
+   * lock.
+   */
+  _stageForPanorama() {
+    Object.assign(settings.environment, {
+      // Trim the floor to a plaza. Anything further was invisible under fog and
+      // is now actively in the way of the city.
+      floorScale: 0.14,
+      // Fog has to finish *before* the floor's edge, or the edge shows as a
+      // hard arc and the player appears to stand on a disc.
+      fogNear: 4,
+      fogFar: 18,
+      // Read the fog colour off the road rather than the horizon, so the floor
+      // fades into the street instead of into an overcast sky.
+      fogHorizonOffset: 0.1,
+      // Close enough to parallax convincingly, far enough to clear the floor.
+      parallaxWorldScale: 6,
+      backgroundIntensity: 1.1,
+      // The void lit characters from behind; a lit city needs them to read as
+      // more than silhouettes.
+      ambientIntensity: 0.4
+    });
+
+    settings.camera.distance = 13.5;
+    // Nearly level, which is what puts the crossing in frame at all.
+    this.rig.setOrbit(1.34, 0.6);
+  }
+
+  /**
    * Voice, the HUD and the push-to-talk key.
    *
    * Push-to-talk rather than always-on listening: an open microphone in a room
@@ -665,6 +704,8 @@ export class App {
           }
         }
         if (!loaded) console.info('[env] no depth map beside', base, '— backdrop stays flat');
+
+        if (loaded) this._stageForPanorama();
       } catch (error) {
         console.warn('[env] backdrop failed to load, falling back to the probe', error);
       }

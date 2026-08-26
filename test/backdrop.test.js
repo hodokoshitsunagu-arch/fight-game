@@ -46,13 +46,44 @@ const skyGroundHorizon = (height) => (y) => {
   return y < height / 2 ? BLUE : [0.05, 0.04, 0.03];
 };
 
+/** Runs `fn` with the sample band pinned, then puts the setting back. */
+function withOffset(offset, fn) {
+  const previous = settings.environment.fogHorizonOffset;
+  settings.environment.fogHorizonOffset = offset;
+  try {
+    return fn();
+  } finally {
+    settings.environment.fogHorizonOffset = previous;
+  }
+}
+
 test('reads the colour of the horizon band, not the sky or the ground', () => {
   const texture = makeTexture(256, 128, skyGroundHorizon(128));
-  const horizon = sample(texture);
+  const horizon = withOffset(0, () => sample(texture));
   assert.ok(horizon, 'a colour came back');
   // Should land near the sand band, and clearly not on the blue sky.
   assert.ok(horizon.r > horizon.b, 'warm, like the band it sampled');
   assert.ok(Math.abs(horizon.r - SAND[0]) < 0.2, `r ${horizon.r} near ${SAND[0]}`);
+});
+
+test('the offset moves the sample off the horizon and onto the ground', () => {
+  // What the offset is for: the floor fades into the panorama's ground, so on a
+  // grounded backdrop the ground is the colour to match, not the sky-lit
+  // horizon line.
+  const texture = makeTexture(256, 128, skyGroundHorizon(128));
+  const atHorizon = withOffset(0, () => sample(texture));
+  const belowHorizon = withOffset(0.2, () => sample(texture));
+  assert.ok(belowHorizon.r < atHorizon.r * 0.5,
+    `ground ${belowHorizon.r.toFixed(3)} is darker than horizon ${atHorizon.r.toFixed(3)}`);
+});
+
+test('the offset cannot walk the sample band off the image', () => {
+  const texture = makeTexture(256, 128, skyGroundHorizon(128));
+  for (const offset of [-5, -0.49, 0.49, 5]) {
+    const result = withOffset(offset, () => sample(texture));
+    assert.ok(result, `offset ${offset} still returned a colour`);
+    assert.ok(Number.isFinite(result.r), `offset ${offset} stayed finite`);
+  }
 });
 
 test('a sun on the horizon does not drag the average to white', () => {
@@ -72,8 +103,8 @@ test('a sun on the horizon does not drag the average to white', () => {
 
 test('float and half-float sources agree', () => {
   const rows = skyGroundHorizon(128);
-  const asHalf = sample(makeTexture(256, 128, rows, { half: true }));
-  const asFloat = sample(makeTexture(256, 128, rows, { half: false }));
+  const asHalf = withOffset(0, () => sample(makeTexture(256, 128, rows, { half: true })));
+  const asFloat = withOffset(0, () => sample(makeTexture(256, 128, rows, { half: false })));
   for (const channel of ['r', 'g', 'b']) {
     assert.ok(Math.abs(asHalf[channel] - asFloat[channel]) < 0.01,
       `${channel}: ${asHalf[channel]} vs ${asFloat[channel]}`);
@@ -82,8 +113,8 @@ test('float and half-float sources agree', () => {
 
 test('three-component data is handled as well as four', () => {
   const rows = skyGroundHorizon(128);
-  const rgb = sample(makeTexture(256, 128, rows, { components: 3 }));
-  const rgba = sample(makeTexture(256, 128, rows, { components: 4 }));
+  const rgb = withOffset(0, () => sample(makeTexture(256, 128, rows, { components: 3 })));
+  const rgba = withOffset(0, () => sample(makeTexture(256, 128, rows, { components: 4 })));
   assert.ok(rgb, 'RGB source read');
   assert.ok(Math.abs(rgb.r - rgba.r) < 0.01, 'and agrees with RGBA');
 });

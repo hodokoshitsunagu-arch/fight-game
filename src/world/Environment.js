@@ -203,7 +203,8 @@ export class Environment {
       ctx.drawImage(image, 0, 0, w, h);
 
       const band = Math.max(1, Math.round(h * 0.05));
-      const start = Math.round(h / 2 - band / 2);
+      const centre = h / 2 + h * settings.environment.fogHorizonOffset;
+      const start = Math.max(0, Math.min(h - band, Math.round(centre - band / 2)));
       const { data } = ctx.getImageData(0, start, w, band);
 
       let r = 0;
@@ -225,6 +226,12 @@ export class Environment {
 
   /**
    * Average colour of the probe's horizon band.
+   *
+   * Sampled a little *below* the equator by default. The fog's job is to hide
+   * where the play floor stops, and the floor stops into the panorama's ground,
+   * not into its sky. On a backdrop with a bright overcast horizon, matching the
+   * sky instead paints the floor pale grey and it reads as a hill rising out of
+   * the street.
    *
    * This is what the fog fades the floor into. Against the flat void the
    * authored fog colour matches the backdrop exactly and the floor edge
@@ -251,7 +258,9 @@ export class Environment {
     // A band either side of the equator, which is the horizon in an
     // equirectangular projection.
     const band = Math.max(1, Math.round(height * 0.05));
-    const start = Math.max(0, Math.round(height / 2 - band / 2));
+    // Offset below the equator: see `fogHorizonOffset`.
+    const centre = height / 2 + height * settings.environment.fogHorizonOffset;
+    const start = Math.max(0, Math.min(height - band, Math.round(centre - band / 2)));
     const stride = Math.max(1, Math.round(width / 256));
 
     let r = 0;

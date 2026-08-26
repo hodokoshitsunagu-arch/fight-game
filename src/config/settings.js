@@ -2177,6 +2177,12 @@ export const settings = {
     // authored colour matches exactly; against a panorama it has to come from
     // the panorama's own horizon or a hard seam appears at the floor edge.
     fogFromHorizon: true,
+    /*
+     * Where to read that colour, as a fraction of image height below the
+     * equator. The floor fades into the panorama's ground, so the ground is
+     * what it has to match — sampling the horizon itself picks up the sky.
+     */
+    fogHorizonOffset: 0.07,
     // Fog is pulled well back so it only dissolves the far edge of the floor into
     // the backdrop rather than sitting on top of the action. Toggle and range are
     // both live in the editor (Environment → Backdrop, fog & dust).

@@ -1629,6 +1629,7 @@ export class Editor {
     R(backdrop, e, 'backgroundRotation', 0, 360, 1, 'rotation (deg)');
     R(backdrop, e, 'backgroundTilt', -20, 20, 0.5, 'tilt (deg)');
     backdrop.add(e, 'fogFromHorizon').name('fog from horizon');
+    R(backdrop, e, 'fogHorizonOffset', -0.2, 0.3, 0.01, 'sample below horizon');
 
     // Parallax only does anything with a depth map loaded; see App.load.
     const parallax = backdrop.addFolder('Parallax (needs depth map)');
