@@ -1,24 +1,31 @@
 /**
- * VoiceHUD.js — proof that the voice is doing the work.
+ * VoiceHUD.js — the microphone, and proof that the voice is doing the work.
  *
- * Without this the demo is indistinguishable from someone pressing Q off
- * camera. Showing the live transcript, the word that fired, and each modifier
- * as it lands is what makes the mechanism visible — particularly a modifier
- * arriving *after* the cast, which is the part worth seeing.
+ * Two jobs:
  *
- * Plain DOM and inline styles, matching the rest of `src/ui`, so it needs no
- * changes to the stylesheet.
+ * 1. **The mic button.** On a phone there is no key to hold, so the whole
+ *    push-to-talk gesture lives here: press and hold the button at the bottom
+ *    of the screen, speak, let go. It is the primary control of this build, so
+ *    it is thumb-sized and sits where a thumb already is.
+ *
+ * 2. **Showing the mechanism.** Without the transcript and the chips, a spoken
+ *    cast is indistinguishable from someone tapping a spell off camera. A
+ *    modifier that lands *after* the cast is marked separately, because that is
+ *    the part worth seeing.
+ *
+ * Styling lives in `styles.css` alongside the rest of the UI; only per-cast
+ * accent colours are set inline, since those come from `ELEMENT_META`.
  */
 
 import { ELEMENT_META } from '../config/settings.js';
 
-// Sits just above the ability bar. The bar occupies roughly the bottom third,
-// and anything lower puts the transcript straight through the spell cards.
-const WRAPPER_STYLE = `
-  position:fixed; left:50%; bottom:40%; transform:translateX(-50%);
-  display:flex; flex-direction:column; align-items:center; gap:10px;
-  font-family:system-ui,-apple-system,'Segoe UI',sans-serif; pointer-events:none;
-  z-index:40; transition:opacity .25s ease; opacity:0;`;
+const MIC_ICON = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 15.5a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 1 0-7 0v6a3.5 3.5 0 0 0 3.5 3.5Z"
+          fill="currentColor"/>
+    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18.5V22"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>`;
 
 export class VoiceHUD {
   constructor(root) {
@@ -26,101 +33,159 @@ export class VoiceHUD {
 
     this.wrapper = document.createElement('div');
     this.wrapper.className = 'voice-hud';
-    this.wrapper.setAttribute('style', WRAPPER_STYLE);
     this.wrapper.innerHTML = `
-      <div data-voice-mic style="
-        display:flex; align-items:center; gap:9px; padding:7px 16px; border-radius:999px;
-        background:rgba(12,16,24,.72); border:1px solid rgba(255,255,255,.14);
-        color:#dfe8f5; font-size:12px; letter-spacing:.14em; text-transform:uppercase;
-        backdrop-filter:blur(8px);">
-        <span data-voice-dot style="
-          width:9px; height:9px; border-radius:50%; background:#48506099;
-          box-shadow:0 0 0 0 rgba(255,90,90,.6); transition:background .2s ease;"></span>
-        <span data-voice-state>Hold Space to speak</span>
+      <div class="voice-hud__readout">
+        <div class="voice-hud__transcript" data-voice-transcript></div>
+        <div class="voice-hud__chips" data-voice-chips></div>
       </div>
-      <div data-voice-transcript style="
-        min-height:1.4em; padding:0 12px; color:#fff; font-size:26px; font-weight:600;
-        letter-spacing:.01em; text-align:center; text-shadow:0 2px 14px rgba(0,0,0,.85);
-        opacity:0; transition:opacity .18s ease;"></div>
-      <div data-voice-chips style="display:flex; gap:7px; flex-wrap:wrap; justify-content:center;"></div>`;
+      <div class="voice-hud__controls">
+        <button class="voice-hud__help-btn" data-voice-help type="button"
+                aria-label="How to play">?</button>
+        <button class="voice-hud__mic" data-voice-mic type="button"
+                aria-label="Hold to speak">
+          <span class="voice-hud__mic-ring" aria-hidden="true"></span>
+          <span class="voice-hud__mic-icon">${MIC_ICON}</span>
+        </button>
+        <span class="voice-hud__spacer" aria-hidden="true"></span>
+      </div>
+      <div class="voice-hud__hint" data-voice-hint>长按说话 · HOLD TO SPEAK</div>`;
 
     root.appendChild(this.wrapper);
 
-    this.mic = this.wrapper.querySelector('[data-voice-mic]');
-    this.dot = this.wrapper.querySelector('[data-voice-dot]');
-    this.state = this.wrapper.querySelector('[data-voice-state]');
+    this.micButton = this.wrapper.querySelector('[data-voice-mic]');
+    this.helpButton = this.wrapper.querySelector('[data-voice-help]');
+    this.hint = this.wrapper.querySelector('[data-voice-hint]');
     this.transcriptEl = this.wrapper.querySelector('[data-voice-transcript]');
     this.chips = this.wrapper.querySelector('[data-voice-chips]');
 
+    /** Set by App: start and stop listening. */
+    this.onTalkStart = null;
+    this.onTalkEnd = null;
+    /** Set by App: open the how-to-play panel. */
+    this.onHelp = null;
+
     this._hideTimer = 0;
     this._accent = '#8fb7ff';
-    this.setVisible(true);
+    this._talking = false;
+
+    this._bindMic();
+    this.helpButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.onHelp?.();
+    });
+  }
+
+  /**
+   * Press-and-hold, built on pointer events so one path covers touch, pen and
+   * mouse.
+   *
+   * `setPointerCapture` is the important part: without it, sliding a thumb a few
+   * pixels off the button loses the release event and the mic stays open. Every
+   * exit route ends the turn, because a microphone stuck on is much worse than
+   * one that stops early.
+   */
+  _bindMic() {
+    const start = (event) => {
+      // Stops the long-press text callout and the synthetic mouse events iOS
+      // fires after a touch.
+      event.preventDefault();
+      event.stopPropagation();
+      if (this._talking) return;
+      this._talking = true;
+      try {
+        this.micButton.setPointerCapture(event.pointerId);
+      } catch {
+        /* capture is a nicety, not a requirement */
+      }
+      this.micButton.classList.add('is-talking');
+      this.onTalkStart?.();
+    };
+
+    const end = (event) => {
+      event?.preventDefault();
+      event?.stopPropagation();
+      if (!this._talking) return;
+      this._talking = false;
+      this.micButton.classList.remove('is-talking');
+      this.onTalkEnd?.();
+    };
+
+    this.micButton.addEventListener('pointerdown', start);
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      this.micButton.addEventListener(type, end);
+    }
+    // A dropped pointer (tab hidden, call comes in) must not leave it listening.
+    window.addEventListener('blur', () => end());
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) end();
+    });
+    // Belt and braces on iOS, which still emits touch events alongside pointer.
+    this.micButton.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    this.micButton.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   setVisible(visible) {
-    this.wrapper.style.opacity = visible ? '1' : '0';
+    this.wrapper.classList.toggle('is-hidden', !visible);
   }
 
   setSupported(supported) {
     if (supported) return;
-    this.state.textContent = 'Voice needs Chrome or Edge';
-    this.dot.style.background = '#7a2f2f';
+    this.micButton.disabled = true;
+    this.micButton.classList.add('is-unsupported');
+    this.hint.textContent = '语音需要 Chrome / Edge · VOICE NEEDS CHROME';
   }
 
   setListening(listening) {
-    this.dot.style.background = listening ? '#ff5a5a' : '#48506099';
-    this.dot.style.boxShadow = listening
-      ? '0 0 0 6px rgba(255,90,90,.16)'
-      : '0 0 0 0 rgba(255,90,90,0)';
-    this.state.textContent = listening ? 'Listening' : 'Hold Space to speak';
+    this.micButton.classList.toggle('is-listening', listening);
+    this.hint.textContent = listening
+      ? '在听… · LISTENING'
+      : '长按说话 · HOLD TO SPEAK';
     if (listening) {
       this.transcriptEl.textContent = '';
       this.chips.innerHTML = '';
       this._accent = '#8fb7ff';
       this._hideTimer = 0;
+      this.transcriptEl.style.color = '';
     }
   }
 
   setTranscript(text) {
     this.transcriptEl.textContent = text;
-    this.transcriptEl.style.opacity = text ? '1' : '0';
+    this.transcriptEl.classList.toggle('is-visible', Boolean(text));
   }
 
-  /** A spell fired. Highlight the name in its own accent colour. */
+  /** A spell fired. Highlight it in its own accent colour. */
   showCast(element, modifiers) {
     const meta = ELEMENT_META[element];
     this._accent = meta?.accent ?? '#8fb7ff';
     this.transcriptEl.style.color = this._accent;
     this.chips.innerHTML = '';
-    this._addChip(meta?.label ?? element, this._accent, true);
-    for (const modifier of modifiers) this._addChip(modifier.word, this._accent, false);
-    this._hideTimer = 2.6;
+    this._addChip(meta?.label ?? element, true);
+    for (const modifier of modifiers) this._addChip(modifier.word, false);
+    this._hideTimer = 2.8;
   }
 
   /** A modifier landed on a cast already in flight — mark it as late. */
   showMutation(modifier) {
-    this._addChip(modifier.word, this._accent, false, true);
-    this._hideTimer = 2.6;
+    this._addChip(modifier.word, false, true);
+    this._hideTimer = 2.8;
   }
 
   showMiss(text) {
     if (!text) return;
     this.transcriptEl.style.color = '#8b93a3';
-    this._hideTimer = 1.4;
+    this._hideTimer = 1.5;
   }
 
-  _addChip(label, accent, primary, late = false) {
+  _addChip(label, primary, late = false) {
     const chip = document.createElement('span');
+    chip.className = `voice-chip${primary ? ' voice-chip--primary' : ''}${late ? ' voice-chip--late' : ''}`;
     chip.textContent = late ? `+ ${label}` : label;
-    chip.setAttribute(
-      'style',
-      `padding:4px 11px; border-radius:999px; font-size:12px; letter-spacing:.1em;
-       text-transform:uppercase; backdrop-filter:blur(8px);
-       border:1px solid ${primary ? accent : 'rgba(255,255,255,.18)'};
-       background:${primary ? `${accent}22` : 'rgba(12,16,24,.7)'};
-       color:${primary ? accent : '#d7dfec'};
-       ${late ? 'animation:none; outline:1px dashed rgba(255,255,255,.25); outline-offset:2px;' : ''}`
-    );
+    if (primary) {
+      chip.style.borderColor = this._accent;
+      chip.style.color = this._accent;
+      chip.style.background = `${this._accent}22`;
+    }
     this.chips.appendChild(chip);
   }
 
@@ -128,9 +193,9 @@ export class VoiceHUD {
     if (this._hideTimer <= 0) return;
     this._hideTimer -= dt;
     if (this._hideTimer <= 0) {
-      this.transcriptEl.style.opacity = '0';
+      this.transcriptEl.classList.remove('is-visible');
       this.chips.innerHTML = '';
-      this.transcriptEl.style.color = '#fff';
+      this.transcriptEl.style.color = '';
     }
   }
 

@@ -155,16 +155,172 @@ body {
  * Ability bar
  * ------------------------------------------------------------------ */
 
+/*
+ * The spell list lives down the right-hand edge as a vertical strip.
+ *
+ * It sits at 50% opacity so it never competes with the effects, which are the
+ * whole point of the build; a press bumps it back to legible while you are
+ * actually using it. The header folds the list away for small screens.
+ */
 .hud__abilities {
   position: absolute;
-  left: 50%;
-  bottom: 26px;
-  transform: translateX(-50%);
+  right: 10px;
+  top: 10px;
+  width: 148px;
+  max-width: 42vw;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
+  gap: 6px;
   pointer-events: auto;
+  opacity: 0.5;
+  transition: opacity 0.18s ease;
+}
+
+.hud__abilities:active,
+.hud__abilities.is-collapsed {
+  opacity: 0.92;
+}
+
+.hud__abilities-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--ui-text);
+  font: 600 11px/1 var(--ui-font);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  /* A header that scrolls the page or pops a text callout when tapped is
+     broken on a phone. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud__abilities-header:active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.hud__abilities-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 0.22s ease;
+  opacity: 0.8;
+}
+
+.hud__abilities.is-collapsed .hud__abilities-chevron {
+  transform: rotate(-135deg) translate(-1px, -1px);
+}
+
+.hud__abilities-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Leaves the bottom of the screen to the mic and the transcript. */
+  max-height: min(calc(100vh - 300px), 430px);
+  /* A flex item defaults to `min-height: auto`, which is its content height —
+     that silently overrides `max-height: 0` and the collapse does nothing. */
+  min-height: 0;
+  /* Collapse animates on max-height, so it needs a value to animate from. */
+  transition: max-height 0.26s ease, opacity 0.2s ease;
+}
+
+.hud__abilities.is-collapsed .hud__abilities-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hud__ability-divider {
+  height: 1px;
+  margin: 3px 2px;
+  background: var(--ui-border);
+}
+
+/*
+ * Compact horizontal cards, so twelve of them fit down a phone screen without
+ * becoming the screen.
+ *
+ * The English name is the one that stays: it is what you actually say out loud,
+ * so it is the actionable half. The Chinese label moves to the tooltip rather
+ * than doubling every card's height.
+ */
+.hud__abilities .ability-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  min-height: 0;
+}
+
+.hud__abilities .ability-card__glyph {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+.hud__abilities .ability-card__glyph .glyph-svg {
+  width: 20px;
+  height: 20px;
+}
+
+.hud__abilities .ability-card__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.hud__abilities .ability-card__label > span:first-child {
+  display: block;
+  font-size: 9px;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  /* Two lines rather than an ellipsis: "GRAVITY SINGULARITY" truncated to
+     "GRAVITY SI..." hides the word you have to say. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  /* The base rule reserves 27px for the two-line centred layout of the old
+     bottom bar; in the strip that is dead vertical space. */
+  min-height: 0;
+}
+
+.hud__abilities .ability-card__label-zh {
+  display: none;
+}
+
+.hud__abilities .ability-card__cooldown {
+  left: 20px;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%) scale(0.9);
+}
+
+.hud__abilities .ability-card__cooldown strong {
+  font-size: 11px;
+}
+
+.hud__abilities .ability-card__cooldown small {
+  display: none;
 }
 
 .damage-numbers {
@@ -191,16 +347,9 @@ body {
   will-change: opacity;
 }
 
-.hud__ability-row {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-}
 
-.hud__ability-gap {
-  width: 8px;
-  flex: 0 0 8px;
-}
+
+
 
 .ability-card--self {
   background: rgba(16, 24, 31, 0.72);
@@ -426,14 +575,50 @@ body {
 }
 
 .hud__help {
-  left: 22px;
-  bottom: 250px;
-  width: min(430px, calc(100vw - 44px));
-  max-width: 430px;
+  left: 12px;
+  bottom: 96px;
+  width: min(310px, calc(100vw - 180px));
   font-size: 11px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--ui-text-dim);
   transition: opacity 0.3s ease;
+}
+
+.hud__help-title {
+  margin-bottom: 8px;
+  color: var(--ui-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hud__help-step {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 7px;
+  color: var(--ui-text);
+}
+
+.hud__help-step b {
+  flex: 0 0 auto;
+  display: grid;
+  place-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* Something to actually read aloud. */
+.hud__help-say {
+  margin: 3px 0 0 22px;
+  color: var(--ui-accent, #8fb7ff);
+  font-size: 10px;
+  line-height: 1.55;
 }
 
 .hud__help-zh {
@@ -465,8 +650,9 @@ body {
 }
 
 .hud__stats {
-  right: 22px;
-  top: 22px;
+  /* Left-hand side now: the right edge belongs to the spell strip. */
+  left: 12px;
+  top: 74px;
   min-width: 132px;
   font-variant-numeric: tabular-nums;
   color: var(--ui-text-dim);
@@ -716,11 +902,219 @@ body {
 }
 
 @media (max-width: 760px) {
-  .hud__help,
   .hud__stats {
     display: none;
   }
-  .ability-card {
-    width: 78px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Voice HUD — the mic is the primary control on a phone
+ * ------------------------------------------------------------------ */
+
+.voice-hud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.voice-hud.is-hidden {
+  opacity: 0;
+}
+
+.voice-hud__readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  /* Reserve the space so the mic never jumps when a transcript appears. */
+  min-height: 62px;
+  justify-content: flex-end;
+  padding: 0 12px;
+}
+
+.voice-hud__transcript {
+  max-width: min(560px, 92vw);
+  color: #fff;
+  font-size: clamp(17px, 5vw, 26px);
+  font-weight: 600;
+  text-align: center;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.voice-hud__transcript.is-visible {
+  opacity: 1;
+}
+
+.voice-hud__chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.voice-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 16, 24, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #d7dfec;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* A modifier that landed after the cast had already left. */
+.voice-chip--late {
+  outline: 1px dashed rgba(255, 255, 255, 0.28);
+  outline-offset: 2px;
+}
+
+.voice-hud__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+/* Keeps the mic optically centred against the help button. */
+.voice-hud__spacer {
+  width: 38px;
+}
+
+.voice-hud__mic {
+  position: relative;
+  display: grid;
+  place-content: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(14, 19, 28, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 26px -8px rgba(0, 0, 0, 0.8);
+  color: #e8eef8;
+  pointer-events: auto;
+  cursor: pointer;
+  /* Everything a long press must not do on a phone: scroll, select, pop a
+     callout, or flash the tap highlight. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.14s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.voice-hud__mic svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+
+.voice-hud__mic.is-talking {
+  transform: scale(0.94);
+  background: rgba(46, 20, 24, 0.9);
+  border-color: rgba(255, 90, 90, 0.75);
+  color: #ff8f8f;
+}
+
+.voice-hud__mic.is-unsupported {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Pulses only while the recogniser is actually open. */
+.voice-hud__mic-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 90, 90, 0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.voice-hud__mic.is-listening .voice-hud__mic-ring {
+  animation: voice-pulse 1.25s ease-out infinite;
+}
+
+@keyframes voice-pulse {
+  0% { opacity: 0.75; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.32); }
+}
+
+.voice-hud__help-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--ui-border);
+  background: rgba(14, 19, 28, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--ui-text-dim);
+  font: 600 15px/1 var(--ui-font);
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.voice-hud__help-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.voice-hud__hint {
+  color: var(--ui-text-dim);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+}
+
+/* On a phone the how-to-play guide is the onboarding, so it stays available —
+   only the debug stats panel is dropped. */
+@media (max-width: 760px) {
+  /* Keep the toast clear of the spell strip on the right. */
+  .hud__toast {
+    left: 12px;
+    right: 152px;
+    transform: translateY(-12px);
+    max-width: none;
+    font-size: 11px;
+  }
+
+  .hud__toast.is-visible {
+    transform: translateY(0);
+  }
+
+  .hud__help {
+    display: block;
+    left: 10px;
+    right: auto;
+    bottom: 150px;
+    width: min(300px, calc(100vw - 20px));
+  }
+
+  .hud__abilities {
+    width: 128px;
+    right: 8px;
+  }
+
+  .voice-hud__mic {
+    width: 70px;
+    height: 70px;
   }
 }

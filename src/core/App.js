@@ -428,7 +428,23 @@ export class App {
       else this.hud.showToast(`Voice: ${kind}`);
     });
 
+    // The phone's push-to-talk: hold the mic button instead of a key.
+    this.voiceHUD.onTalkStart = () => this.voice.pressToTalk();
+    this.voiceHUD.onTalkEnd = () => this.voice.releaseToTalk();
+    this.voiceHUD.onHelp = () => this.hud.toggleHelp();
+
     this.voiceHUD.setSupported(this.voice.supported);
+
+    // Show the guide once, for a first-time visitor who has no idea a
+    // microphone is the control scheme. After that it is behind the ? button.
+    let seen = false;
+    try {
+      seen = localStorage.getItem('voice.onboarded') === '1';
+      localStorage.setItem('voice.onboarded', '1');
+    } catch {
+      seen = false;
+    }
+    if (!seen) this.hud.toggleHelp();
   }
 
   /** Select an ability and arm it, unless it is still cooling down. */

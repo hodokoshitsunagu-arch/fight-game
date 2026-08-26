@@ -34,7 +34,6 @@ export class HUD {
             <strong data-cooldown-value>0.0</strong>
             <small>CD</small>
           </div>
-          <div class="ability-card__key">${meta.key}</div>
           <div class="ability-card__glyph">${ELEMENT_SIGILS[element] ?? ''}</div>
           <div class="ability-card__label">
             <span>${meta.label}</span>
@@ -50,7 +49,6 @@ export class HUD {
           <strong data-cooldown-value>0.0</strong>
           <small>CD</small>
         </div>
-        <div class="ability-card__key">${meta.key}</div>
         <div class="ability-card__glyph">${SELF_ABILITY_SIGILS[id] ?? ''}</div>
         <div class="ability-card__label">
           <span>${meta.label}</span>
@@ -74,40 +72,47 @@ export class HUD {
       </div>
 
       <div class="hud__panel hud__help">
-        <div><strong>Q</strong> — Frost Lance · Freezing cone &nbsp; <strong>E</strong> — Storm Lance · Lightning stagger</div>
-        <div class="hud__help-zh"><strong>Q</strong> — 冰霜长枪 · 锥形冻结 &nbsp; <strong>E</strong> — 雷霆长枪 · 雷击硬直</div>
-        <div><strong>R</strong> — Cinder Fall · Meteor impact &nbsp; <strong>F</strong> — Nova Beam · Sustained beam</div>
-        <div class="hud__help-zh"><strong>R</strong> — 烬火天降 · 陨石冲击 &nbsp; <strong>F</strong> — 新星光束 · 持续光束</div>
-        <div><strong>V</strong> — Voltaic Snare · Slow field &nbsp; <strong>X</strong> — Glacial Crown · Freeze burst</div>
-        <div class="hud__help-zh"><strong>V</strong> — 伏特陷阱 · 减速力场 &nbsp; <strong>X</strong> — 冰川王冠 · 冻结爆发</div>
-        <div><strong>1</strong> — Rift Sever · Linear cleave &nbsp; <strong>2</strong> — Solar Phoenix · Explosion</div>
-        <div class="hud__help-zh"><strong>1</strong> — 裂隙斩 · 直线斩击 &nbsp; <strong>2</strong> — 太阳凤凰 · 爆炸冲击</div>
-        <div><strong>3</strong> — Gravity Singularity · Pull &nbsp; <strong>4</strong> — Worldroot Bloom · Root</div>
-        <div class="hud__help-zh"><strong>3</strong> — 引力奇点 · 引力牵引 &nbsp; <strong>4</strong> — 世界树绽放 · 自然定身</div>
-        <div><strong>5</strong> — Force Repulse · Launch &nbsp; <strong>6</strong> — Verdant Heal · Restore HP</div>
-        <div class="hud__help-zh"><strong>5</strong> — 力场震退 · 范围弹飞 &nbsp; <strong>6</strong> — 翠绿治愈 · 恢复生命</div>
-        <div class="hud__help-note">3, 4, V and X use a targeting circle.</div>
-        <div class="hud__help-zh">3、4、V、X 使用范围瞄准圈。</div>
-        <div><strong>W A S D</strong> — Move &nbsp; <strong>Shift</strong> — Run</div>
-        <div class="hud__help-zh"><strong>W A S D</strong> — 移动 &nbsp; <strong>Shift</strong> — 奔跑</div>
-        <div><strong>Mouse</strong> — Aim &nbsp; <strong>Left click</strong> — Cast</div>
-        <div class="hud__help-zh"><strong>鼠标</strong> — 瞄准 &nbsp; <strong>左键</strong> — 施放</div>
-        <div><strong>Esc / right click</strong> — Cancel &nbsp; <strong>Right drag / Scroll</strong> — Camera</div>
-        <div class="hud__help-zh"><strong>Esc / 右键</strong> — 取消 &nbsp; <strong>右键拖动 / 滚轮</strong> — 镜头</div>
-        <div style="margin-top:6px">
-          <kbd>G</kbd> editor &nbsp; <kbd>P</kbd> pause &nbsp; <kbd>C</kbd> clear effects
+        <div class="hud__help-title">\u600e\u4e48\u73a9 \xb7 HOW TO PLAY</div>
+
+        <div class="hud__help-step">
+          <b>1</b><span>\u957f\u6309\u5e95\u90e8\u9ea6\u514b\u98ce\uff0c\u8bf4\u51fa\u6cd5\u672f\u540d</span>
         </div>
-        <div><kbd>B</kbd> spawn 50 Monsters &nbsp; <kbd>H</kbd> hide this</div>
-        <div class="hud__help-note">Paused still applies every editor change.</div>
+        <div class="hud__help-zh">Hold the mic button and say a spell name</div>
+        <div class="hud__help-say">\u201cfrost lance\u201d \xb7 \u201cstorm lance\u201d \xb7 \u201ccinder fall\u201d</div>
+
+        <div class="hud__help-step">
+          <b>2</b><span>\u52a0\u4fee\u9970\u8bcd\uff0c\u6cd5\u672f\u4f1a\u8ddf\u7740\u53d8</span>
+        </div>
+        <div class="hud__help-zh">Add a modifier and the spell changes with it</div>
+        <div class="hud__help-say">\u201cgreater crimson frost lance\u201d</div>
+        <div class="hud__help-note">
+          \u4fee\u9970\u8bcd\u8bf4\u5728\u540e\u9762\u4e5f\u7b97 \u2014 \u6cd5\u672f\u98de\u51fa\u53bb\u4e86\u8fd8\u80fd\u53d8\u8272\u3001\u53d8\u5927\u3002
+        </div>
+
+        <div class="hud__help-step">
+          <b>3</b><span>\u70b9\u53f3\u4fa7\u6280\u80fd\u6761\u4e5f\u53ef\u4ee5\u9009\u6cd5\u672f\uff0c\u518d\u70b9\u753b\u9762\u65bd\u653e</span>
+        </div>
+        <div class="hud__help-zh">Or tap a spell on the right, then tap the ground to cast</div>
+
+        <div class="hud__help-note" style="margin-top:8px">
+          \u5355\u6307\u62d6\u52a8\u65cb\u8f6c\u955c\u5934 \xb7 \u53cc\u6307\u634f\u5408\u7f29\u653e<br>
+          \u70b9\u53f3\u4e0a\u89d2\u201c\u6280\u80fd\u201d\u6807\u9898\u53ef\u6536\u8d77\u5217\u8868
+        </div>
+        <div class="hud__help-note">
+          \u9700\u8981 Chrome / Edge \u5e76\u5141\u8bb8\u9ea6\u514b\u98ce\u6743\u9650\u3002
+        </div>
       </div>
 
-      <div class="hud__abilities">
-        <div class="hud__ability-row">
+      <div class="hud__abilities" data-abilities>
+        <button class="hud__abilities-header" data-abilities-toggle
+                type="button" aria-expanded="true">
+          <span>\u6280\u80fd \xb7 SPELLS</span>
+          <i class="hud__abilities-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="hud__abilities-body" data-abilities-body>
           ${ELEMENT_GROUPS.classic.map(renderAbilityCard).join('')}
-        </div>
-        <div class="hud__ability-row hud__ability-row--numeric">
           ${ELEMENT_GROUPS.numeric.map(renderAbilityCard).join('')}
-          <span class="hud__ability-gap" aria-hidden="true"></span>
+          <span class="hud__ability-divider" aria-hidden="true"></span>
           ${Object.entries(SELF_ABILITY_META).map(renderSelfAbilityCard).join('')}
         </div>
       </div>
@@ -148,6 +153,43 @@ export class HUD {
     this.toast = root.querySelector('[data-toast]');
     this.pausedBadge = root.querySelector('[data-paused]');
     this.abilityBar = root.querySelector('.hud__abilities');
+
+    /*
+     * Collapsing the spell list.
+     *
+     * On a phone the list eats a real share of a small screen, and the point of
+     * this build is to watch the effects — so the header folds it away. State is
+     * remembered across reloads: someone who collapsed it once meant it.
+     */
+    this.abilitiesBody = root.querySelector('[data-abilities-body]');
+    this.abilitiesToggle = root.querySelector('[data-abilities-toggle]');
+    this.abilitiesToggle.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.setAbilitiesCollapsed(!this.abilityBar.classList.contains('is-collapsed'));
+    });
+    // The header is a button inside a pointer-events:none overlay; stop taps on
+    // it from reaching the canvas and firing a cast underneath.
+    for (const type of ['pointerdown', 'pointerup']) {
+      this.abilitiesToggle.addEventListener(type, (event) => event.stopPropagation());
+    }
+
+    let collapsed = false;
+    try {
+      collapsed = localStorage.getItem('hud.abilities.collapsed') === '1';
+    } catch {
+      /* private mode, or storage blocked — default to open */
+    }
+    this.setAbilitiesCollapsed(collapsed);
+  }
+
+  setAbilitiesCollapsed(collapsed) {
+    this.abilityBar.classList.toggle('is-collapsed', collapsed);
+    this.abilitiesToggle.setAttribute('aria-expanded', String(!collapsed));
+    try {
+      localStorage.setItem('hud.abilities.collapsed', collapsed ? '1' : '0');
+    } catch {
+      /* nothing to remember it with */
+    }
   }
 
   /** @param {{silent?: boolean}} [options] */
