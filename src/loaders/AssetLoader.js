@@ -1,4 +1,4 @@
-import { LoadingManager, TextureLoader } from 'three';
+import { LoadingManager, TextureLoader, EquirectangularReflectionMapping, SRGBColorSpace } from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
@@ -97,4 +97,33 @@ export class AssetLoader {
       this.hdr.load(encodeURI(url), resolve, undefined, reject);
     });
   }
+
+  /**
+   * Load an equirectangular panorama, picking the loader from the extension.
+   *
+   * Backdrops arrive in both kinds: a generated `.hdr` carries real range and
+   * can also light a scene, while an 8K `.jpg` is the practical way to get a
+   * sky that holds up at full screen without a 100MB download. Both end up as
+   * an equirect-mapped texture; only the colour space differs.
+   */
+  async loadPanorama(url) {
+    const isHDR = isHighDynamicRange(url);
+    const texture = isHDR ? await this.loadHDR(url) : await this.loadTexture(url);
+    texture.mapping = EquirectangularReflectionMapping;
+    if (!isHDR) texture.colorSpace = SRGBColorSpace;
+    return texture;
+  }
+}
+
+/**
+ * Whether a panorama URL points at high-dynamic-range data.
+ *
+ * Exported because the branch decides both which loader runs and which colour
+ * space the texture gets, and both are wrong in ways that are hard to see: an
+ * HDR read as sRGB comes out black, an sRGB read as linear comes out washed
+ * out. A query string is common on generated assets (`?v=2`, signed URLs), so
+ * the extension is matched before it, not at the end of the string.
+ */
+export function isHighDynamicRange(url) {
+  return /\.(hdr|exr)(\?|#|$)/i.test(String(url ?? ''));
 }

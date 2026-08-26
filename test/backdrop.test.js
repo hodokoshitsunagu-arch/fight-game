@@ -117,3 +117,27 @@ test('the backdrop settings exist with the documented shape', () => {
   assert.equal(typeof env.backgroundRotation, 'number');
   assert.equal(typeof env.fogFromHorizon, 'boolean');
 });
+
+/* ------------------------------------------------------------------ */
+/* Panorama source selection                                           */
+/* ------------------------------------------------------------------ */
+
+test('HDR sources are told apart from sRGB ones', async () => {
+  const { isHighDynamicRange } = await import('../src/loaders/AssetLoader.js');
+
+  for (const url of ['./sky.hdr', './sky.EXR', 'a/b/c.hdr', './sky.hdr?v=2', './sky.exr#frag']) {
+    assert.equal(isHighDynamicRange(url), true, `${url} is HDR`);
+  }
+  for (const url of ['./sky.jpg', './sky.png', './sky.webp', './sky.jpeg?w=8192', '', null]) {
+    assert.equal(isHighDynamicRange(url), false, `${url} is not HDR`);
+  }
+  // The trap: a query string after the extension. Matching only at the end of
+  // the string would read a generated `.hdr?v=2` as sRGB and render it black.
+  assert.equal(isHighDynamicRange('./generated.hdr?signature=abc123'), true);
+});
+
+test('a backdrop URL is configurable and empty by default', () => {
+  assert.equal(typeof settings.environment.panoramaUrl, 'string');
+  assert.equal(settings.environment.panoramaUrl, '', 'defaults to reusing the lighting probe');
+  assert.equal(typeof settings.environment.backgroundTilt, 'number');
+});

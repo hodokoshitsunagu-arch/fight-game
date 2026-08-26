@@ -136,10 +136,71 @@ export class Environment {
     // custom water / wind shaders (they cannot use the PMREM cube directly) —
     // and, now, as the panorama backdrop.
     this.equirect = hdrTexture;
+    // The probe doubles as the backdrop until a dedicated panorama is set.
+    this._backdrop = hdrTexture;
     this._horizonColor = this._sampleHorizon(hdrTexture);
 
     this._pmrem.dispose();
     this._pmrem = null;
+  }
+
+  /**
+   * Use a dedicated panorama as the backdrop, leaving the lighting probe alone.
+   *
+   * The horizon colour is re-read from whatever is actually on screen, since
+   * that is what the fog has to match. An LDR source is already tone-mapped, so
+   * its horizon needs no exposure compensation the way the probe's does — the
+   * flag records which kind we have.
+   *
+   * @param {import('three').Texture|null} texture null restores the probe.
+   */
+  setBackdrop(texture) {
+    this._backdrop = texture ?? this.equirect;
+    this._backdropIsLDR = Boolean(texture) && texture !== this.equirect
+      && !(texture.image?.data instanceof Uint16Array || texture.image?.data instanceof Float32Array);
+    const sampled = this._sampleHorizon(this._backdrop) ?? this._sampleCanvasHorizon(this._backdrop);
+    if (sampled) this._horizonColor = sampled;
+  }
+
+  /**
+   * Horizon colour for a panorama that lives in an ImageBitmap rather than a
+   * typed array — every `.jpg` / `.png` backdrop. Drawing it to a canvas is the
+   * only way to read those pixels back, so it is done once, at a size that
+   * costs nothing.
+   */
+  _sampleCanvasHorizon(texture) {
+    const image = texture?.image;
+    if (!image || typeof document === 'undefined') return null;
+    if (!(image.width > 0 && image.height > 0)) return null;
+
+    try {
+      const w = 256;
+      const h = 128;
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(image, 0, 0, w, h);
+
+      const band = Math.max(1, Math.round(h * 0.05));
+      const start = Math.round(h / 2 - band / 2);
+      const { data } = ctx.getImageData(0, start, w, band);
+
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      const n = data.length / 4;
+      for (let i = 0; i < data.length; i += 4) {
+        // sRGB -> linear, so it matches the space the fog colour is set in.
+        r += (data[i] / 255) ** 2.2;
+        g += (data[i + 1] / 255) ** 2.2;
+        b += (data[i + 2] / 255) ** 2.2;
+      }
+      return { r: r / n, g: g / n, b: b / n };
+    } catch {
+      // A cross-origin image taints the canvas; fall back to the authored fog.
+      return null;
+    }
   }
 
   /**
@@ -261,14 +322,16 @@ export class Environment {
     this._bgColor.copy(getColor(env.backgroundColor));
 
     /* ---- backdrop ---- */
-    const panorama = env.backgroundMode === 'panorama' && this.equirect;
+    const backdrop = this._backdrop ?? this.equirect;
+    const panorama = env.backgroundMode === 'panorama' && backdrop;
     // Assigning the same object every frame is a no-op in three; only a real
     // change touches the renderer.
-    this.scene.background = panorama ? this.equirect : this._bgColor;
+    this.scene.background = panorama ? backdrop : this._bgColor;
     this.scene.backgroundIntensity = panorama ? env.backgroundIntensity : 1;
     this.scene.backgroundBlurriness = panorama ? env.backgroundBlur : 0;
     if (panorama) {
       this.scene.backgroundRotation.y = MathUtils.degToRad(env.backgroundRotation);
+      this.scene.backgroundRotation.x = MathUtils.degToRad(env.backgroundTilt);
     }
 
     // Attaching / detaching the fog flips the FOG shader define, so the switch
@@ -279,7 +342,7 @@ export class Environment {
       // Match the fog to the backdrop it fades into, scaled by the same
       // exposure the backdrop is drawn at, so the floor edge stays invisible.
       const h = this._horizonColor;
-      const k = env.backgroundIntensity;
+      const k = this._backdropIsLDR ? 1 : env.backgroundIntensity;
       this._fog.color.setRGB(
         Math.min(1, h.r * k),
         Math.min(1, h.g * k),

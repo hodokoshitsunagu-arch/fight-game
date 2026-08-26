@@ -611,6 +611,29 @@ export class App {
     await this.environment.loadEnvironment(hdr);
     frame.uEnvMap.value = this.environment.equirect;
 
+    // A dedicated backdrop is optional and must never block the boot: a missing
+    // or malformed panorama should cost you the sky, not the app.
+    // `?panorama=./hdri/whatever.jpg` overrides the configured backdrop, so a
+    // freshly generated panorama can be tried by dropping it in `public/` and
+    // editing the address bar — no rebuild, no code change.
+    const panoramaOverride =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('panorama')
+        : null;
+    if (panoramaOverride) settings.environment.panoramaUrl = panoramaOverride;
+
+    if (settings.environment.panoramaUrl) {
+      this.loading.setProgress(0.2, 'Loading backdrop…');
+      try {
+        this.environment.setBackdrop(await assets.loadPanorama(settings.environment.panoramaUrl));
+        // A backdrop was asked for explicitly; show it rather than making the
+        // caller also flip the mode.
+        settings.environment.backgroundMode = 'panorama';
+      } catch (error) {
+        console.warn('[env] backdrop failed to load, falling back to the probe', error);
+      }
+    }
+
     this.loading.setProgress(0.35, 'Loading floor…');
     await this.ground.loadTextures(assets);
 

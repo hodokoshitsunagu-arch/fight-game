@@ -1626,6 +1626,7 @@ export class Editor {
     R(backdrop, e, 'backgroundIntensity', 0, 3, 0.01, 'exposure');
     R(backdrop, e, 'backgroundBlur', 0, 1, 0.01, 'blur');
     R(backdrop, e, 'backgroundRotation', 0, 360, 1, 'rotation (deg)');
+    R(backdrop, e, 'backgroundTilt', -20, 20, 0.5, 'tilt (deg)');
     backdrop.add(e, 'fogFromHorizon').name('fog from horizon');
 
     R(folder, e, 'sunIntensity', 0, 8, 0.01, 'key intensity');

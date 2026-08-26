@@ -2112,6 +2112,23 @@ export const settings = {
      * which also means it never parallaxes as the character walks.
      */
     backgroundMode: 'flat', // 'flat' | 'panorama'
+    /*
+     * Where the backdrop comes from.
+     *
+     * Empty means reuse the lighting probe, which costs nothing extra. Point it
+     * at a file to use a dedicated panorama instead — the two wants are
+     * genuinely different: lighting needs high dynamic range and survives being
+     * low-resolution, while a backdrop needs resolution and barely cares about
+     * range. Keeping them separate means an 8K JPG can be the sky without
+     * anyone trying to light a scene with it, and without shipping an 8K HDR.
+     *
+     * `.hdr` loads through the HDR loader; `.jpg` / `.png` / `.webp` load as
+     * sRGB textures. Drop a file in `public/` and name it here.
+     */
+    panoramaUrl: '', // e.g. './hdri/city_8k.jpg'
+    // Vertical trim, degrees. A generated panorama is not always level, and a
+    // horizon a few degrees off reads immediately as wrong.
+    backgroundTilt: 0,
     backgroundIntensity: 0.85, // exposure of the backdrop alone
     // Blur hides the seams of a low-resolution probe and stops a busy sky from
     // competing with the effects, which are the thing worth looking at.
