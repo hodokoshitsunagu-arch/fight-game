@@ -53,10 +53,28 @@ export class MiniMap {
       <div class="minimap__cone" data-cone aria-hidden="true"></div>
       <div class="minimap__pin" aria-hidden="true"></div>
       <button class="minimap__toggle" data-toggle type="button" aria-label="Toggle map">▾</button>
-      <div class="minimap__label" data-label>—</div>`;
+      <div class="minimap__label" data-label>—</div>
+      <div class="minimap__pad" data-pad>
+        <button class="minimap__dir minimap__dir--f" data-dir="0"    type="button" aria-label="Forward">▲</button>
+        <button class="minimap__dir minimap__dir--r" data-dir="90"   type="button" aria-label="Right">▶</button>
+        <button class="minimap__dir minimap__dir--b" data-dir="180"  type="button" aria-label="Back">▼</button>
+        <button class="minimap__dir minimap__dir--l" data-dir="-90"  type="button" aria-label="Left">◀</button>
+      </div>`;
     root.appendChild(this.element);
 
+    /** Set by App: `(relativeDeg) => void`. */
+    this.onStep = null;
+
     this.canvas = this.element.querySelector('[data-map]');
+    this.dirs = {};
+    for (const button of this.element.querySelectorAll('[data-dir]')) {
+      this.dirs[button.dataset.dir] = button;
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (button.disabled) return;
+        this.onStep?.(Number(button.dataset.dir));
+      });
+    }
     this.cone = this.element.querySelector('[data-cone]');
     this.label = this.element.querySelector('[data-label]');
 
@@ -116,7 +134,8 @@ export class MiniMap {
     if (!this.ready || !position) return;
 
     this.map.setCenter(position);
-    this.label.textContent = `${position.lat.toFixed(4)}, ${position.lng.toFixed(4)}`;
+    // Three decimals is ~100m — enough to say where, short enough for one line.
+    this.label.textContent = `${position.lat.toFixed(3)}, ${position.lng.toFixed(3)}`;
 
     // The trail is what tells one identical stretch of pavement from another.
     const last = this._trail[this._trail.length - 1];
@@ -131,15 +150,22 @@ export class MiniMap {
     for (const line of this._links) line.setMap(null);
     this._links = links
       .filter((link) => typeof link?.heading === 'number')
-      .map((link) =>
-        new this.maps.Polyline({
+      .map((link) => {
+        const line = new this.maps.Polyline({
           map: this.map,
           path: [position, project(position.lat, position.lng, link.heading, LINK_LENGTH_M)],
           strokeColor: '#ffffff',
           strokeOpacity: 0.5,
-          strokeWeight: 3
-        })
-      );
+          // Fat enough to hit with a thumb, which is why it is not 1px.
+          strokeWeight: 5,
+          clickable: true,
+          zIndex: 2
+        });
+        // Tapping the exit itself is the precise version of the pad: the pad
+        // snaps to the nearest of four, this goes exactly where you pointed.
+        line.addListener('click', () => this.onStepHeading?.(link.heading));
+        return line;
+      });
 
     this.element.classList.toggle('is-stuck', links.length === 0);
   }
@@ -155,6 +181,26 @@ export class MiniMap {
     if (this._heading !== null && Math.abs(headingDeg - this._heading) < 0.6) return;
     this._heading = headingDeg;
     this.cone.style.transform = `translate(-50%, -100%) rotate(${headingDeg}deg)`;
+  }
+
+  /**
+   * Light up only the directions that lead somewhere.
+   *
+   * A pad that offers four ways out of a street with two teaches the player its
+   * buttons lie, so availability comes from the panorama's own links rather than
+   * being assumed.
+   *
+   * @param {{forward:boolean,right:boolean,back:boolean,left:boolean}} available
+   */
+  setDirections(available) {
+    if (!this.dirs) return;
+    const map = { '0': available.forward, '90': available.right, '180': available.back, '-90': available.left };
+    for (const [key, button] of Object.entries(this.dirs)) {
+      const usable = Boolean(map[key]);
+      if (button.disabled === !usable) continue;
+      button.disabled = !usable;
+      button.classList.toggle('is-available', usable);
+    }
   }
 
   setOpen(open) {

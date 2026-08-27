@@ -1375,8 +1375,8 @@ body {
   left: 10px;
   bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   z-index: 42;
-  width: 132px;
-  height: 132px;
+  width: 152px;
+  height: 152px;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--ui-border);
@@ -1497,15 +1497,91 @@ body {
   font: 9px/1.4 var(--ui-font);
   font-variant-numeric: tabular-nums;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
 
 @media (max-width: 760px) {
   .minimap {
-    width: 112px;
-    height: 112px;
+    width: 140px;
+    height: 140px;
     /* Above the microphone row rather than beside it. */
     bottom: calc(96px + env(safe-area-inset-bottom, 0px));
   }
+}
+
+/* Direction pad — the forward/back/left/right Street View's own arrows would
+   give, which are turned off because the game owns the pointer. */
+.minimap__pad {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.minimap__dir {
+  position: absolute;
+  display: grid;
+  place-content: center;
+  /* 30px is under the 44px thumb guideline, so the hit area is padded out
+     below rather than the glyph being drawn bigger. */
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 11, 16, 0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.28);
+  font-size: 11px;
+  line-height: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+/* Enlarges the tap target without enlarging the button. */
+.minimap__dir::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
+.minimap__dir.is-available {
+  color: #cfe4ff;
+  border-color: rgba(143, 183, 255, 0.55);
+  background: rgba(20, 34, 56, 0.82);
+}
+
+.minimap__dir.is-available:active {
+  background: rgba(143, 183, 255, 0.32);
+}
+
+/* A direction with no link is drawn, but visibly dead — hiding it would make
+   the pad jump about as the exits change from junction to junction. */
+.minimap__dir:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.minimap__dir--f { top: 24px; left: 50%; transform: translateX(-50%); }
+.minimap__dir--b { bottom: 20px; left: 50%; transform: translateX(-50%); }
+.minimap__dir--l { left: 6px; top: 50%; transform: translateY(-50%); }
+.minimap__dir--r { right: 6px; top: 50%; transform: translateY(-50%); }
+
+.minimap.is-collapsed .minimap__pad {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .minimap__dir { width: 23px; height: 23px; font-size: 9px; }
+  .minimap__dir--f { top: 22px; }
+  .minimap__dir--b { bottom: 18px; }
 }

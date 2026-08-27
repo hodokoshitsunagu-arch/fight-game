@@ -474,6 +474,11 @@ export class App {
     });
     if (survey) this.miniMap.setPosition(survey.position, survey.links);
     this._miniMapPano = survey?.pano ?? null;
+
+    // Tapping a direction is the other way to move: walking banks distance,
+    // this goes immediately. Both end up in the same `step`.
+    this.miniMap.onStep = (relative) => this.streetView.stepRelative(relative);
+    this.miniMap.onStepHeading = (heading) => this.streetView.step(heading);
   }
 
   /**
@@ -487,6 +492,10 @@ export class App {
   _updateMiniMap() {
     if (!this.miniMap?.ready) return;
     this.miniMap.setHeading(this.streetView.heading ?? 0);
+    // Availability turns with the camera, not just with the panorama: the same
+    // junction offers different forward/left/right depending on which way you
+    // are looking.
+    this.miniMap.setDirections(this.streetView.availableDirections());
 
     const survey = this.streetView.survey();
     if (!survey || survey.pano === this._miniMapPano) return;

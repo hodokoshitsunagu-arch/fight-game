@@ -326,6 +326,42 @@ export class StreetViewBackdrop {
   }
 
   /**
+   * Step relative to where the camera is facing.
+   *
+   * "Forward" has no meaning to Street View, which only knows compass bearings,
+   * so the player's frame of reference has to be converted into one. This is
+   * what makes a forward/back/left/right control possible at all.
+   *
+   * @param {number} relativeDeg 0 forward, 90 right, 180 back, -90 left
+   */
+  stepRelative(relativeDeg) {
+    return this.step(((this.heading ?? 0) + relativeDeg + 360) % 360);
+  }
+
+  /**
+   * Which of the four relative directions actually lead somewhere.
+   *
+   * A control that offers four ways out of a street with two is worse than no
+   * control: the player learns the buttons lie. So availability is computed from
+   * the panorama's own links, and a direction with nothing within the tolerance
+   * comes back false and is drawn disabled.
+   *
+   * @returns {{forward:boolean,right:boolean,back:boolean,left:boolean}}
+   */
+  availableDirections(toleranceDeg = 55) {
+    const links = this.ready ? this.panorama?.getLinks?.() ?? [] : [];
+    const heading = this.heading ?? 0;
+    const has = (relative) => {
+      const want = (heading + relative + 360) % 360;
+      return links.some((link) => {
+        if (typeof link?.heading !== 'number') return false;
+        return Math.abs(((link.heading - want + 540) % 360) - 180) <= toleranceDeg;
+      });
+    };
+    return { forward: has(0), right: has(90), back: has(180), left: has(-90) };
+  }
+
+  /**
    * Jump somewhere else entirely.
    *
    * Goes through `StreetViewService` rather than assigning the coordinate
