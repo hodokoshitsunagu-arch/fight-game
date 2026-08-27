@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 
+import { settings } from '../src/config/settings.js';
 import { DummyField } from '../src/sandbox/DummyField.js';
 import { TargetSelector } from '../src/voice/TargetSelector.js';
 import { PerspectiveCamera } from 'three';
@@ -82,19 +83,36 @@ test('stop clears the arena', () => {
   assert.equal(enemies.aliveCount, 0, 'and stays cleared');
 });
 
-test('the dummy ring is reachable by the abilities that will be cast at it', () => {
+test('dummies start beyond every ability\'s reach, and close in', () => {
   const enemies = makeEnemies();
-  new DummyField(enemies, { count: 8, radius: 12 }).start();
-  const selector = new TargetSelector({
-    camera: new PerspectiveCamera(),
-    enemies,
-    character: { position: new Vector3() }
-  });
-  // Frost Lance has the shortest reach of the line casts; if the ring works for
-  // it, the ring works.
-  const solved = selector.solve('ice');
-  assert.ok(solved.target, 'a dummy was found');
-  assert.ok(solved.distance > 0);
+  new DummyField(enemies, { count: 8 }).start();
+
+  // They arrive from a distance now rather than standing in a ring. Frost Lance
+  // has the shortest reach of the line casts; if they started inside it there
+  // would be nothing to watch them do.
+  const distances = enemies.active.map((e) => Math.hypot(e.position.x, e.position.z));
+  const nearest = Math.min(...distances);
+  assert.ok(nearest > settings.ice.range,
+    `nearest dummy at ${nearest.toFixed(1)}m is beyond Frost Lance's ${settings.ice.range}m`);
+
+  // And spread over a range, not all at one radius — a wall arriving together
+  // is a wall, not a horde.
+  assert.ok(Math.max(...distances) - nearest > 10, 'they are spread in depth');
+});
+
+test('dummies arrive from a spread of bearings, biased by where you look', () => {
+  const enemies = makeEnemies();
+  const field = new DummyField(enemies, { count: 8 });
+  field.getFacing = () => 0;
+  field.start();
+
+  const bearings = enemies.active.map((e) => Math.atan2(e.position.x, e.position.z));
+  assert.equal(new Set(bearings.map((b) => b.toFixed(3))).size, 8, 'no two share a bearing');
+
+  // A quarter come from behind on purpose: a horde that only ever appears in
+  // front is a shooting gallery.
+  const behind = bearings.filter((b) => Math.abs(b) > Math.PI / 2).length;
+  assert.ok(behind >= 1, `${behind} of 8 approach from behind`);
 });
 
 test('yaw matches the AimController convention', () => {

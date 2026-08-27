@@ -1156,7 +1156,16 @@ body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  pointer-events: auto;
+  /*
+   * The container does not take pointers; its children do.
+   *
+   * A collapsed list is `visibility: hidden`, which still occupies layout — so
+   * this box stands 531px tall with nothing visible in most of it. With
+   * `pointer-events: auto` here, that whole column swallowed taps meant for the
+   * scene behind it, which measured as the middle of the screen belonging to a
+   * dropdown that was not open.
+   */
+  pointer-events: none;
   /* Out of the way at rest, legible the moment it is being used — the same
      bargain the spell strip makes. */
   opacity: 0.6;
@@ -1172,6 +1181,7 @@ body {
 }
 
 .scene-selector__current {
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1254,6 +1264,7 @@ body {
 }
 
 .scene-selector__list {
+  pointer-events: auto;
   margin-top: 6px;
   display: flex;
   flex-direction: column;

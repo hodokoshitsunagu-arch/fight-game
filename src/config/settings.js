@@ -2088,6 +2088,17 @@ export const settings = {
     minPolar: 0.35,
     maxPolar: 1.32,
     fov: 46,
+    /* --- first person --------------------------------------------------- *
+     * The camera stops orbiting a body and becomes the eyes. OrbitControls
+     * cannot express that — it is defined by a target and a radius — so the
+     * look is owned by `FirstPersonView` and these are its numbers.
+     */
+    firstPerson: true,
+    eyeHeight: 1.68,   // metres, roughly a standing adult's eyeline
+    lookSpeed: 1.0,
+    pitchLimit: 78,    // degrees either side of level; past that the view inverts
+    handBob: 1.0,      // 0 stills the hands entirely
+
     targetHeight: 1.35,
     damping: 0.06,
     autoFrame: 0.35 // how strongly the rig drifts toward an active cast

@@ -7,8 +7,8 @@
  * land on something.
  *
  * This is not the wave director. There are no waves, no escalation, no upgrades
- * and no failure state: a fixed population stands in a ring, and when one dies
- * another takes its place a moment later. It reuses `EnemyManager` wholesale
+ * and no failure state: a fixed population walks in from the distance, and when
+ * one dies another sets off a moment later. It reuses `EnemyManager` wholesale
  * rather than inventing a target type, so dummies react, stagger and die with
  * the same feedback the real game has.
  */
@@ -22,10 +22,22 @@ export class DummyField {
    * @param {import('../enemies/EnemyManager.js').EnemyManager} enemies
    * @param {object} options
    */
-  constructor(enemies, { count = 8, radius = 12, respawnDelay = 1.5 } = {}) {
+  constructor(enemies, {
+    count = 8,
+    minDistance = 34,
+    maxDistance = 70,
+    spread = 0.9,
+    respawnDelay = 1.5
+  } = {}) {
     this.enemies = enemies;
     this.count = count;
-    this.radius = radius;
+    /** Metres. Far enough to read as a silhouette before it reads as a threat. */
+    this.minDistance = minDistance;
+    this.maxDistance = maxDistance;
+    /** How wide of the view they arrive, in radians either side. */
+    this.spread = spread;
+    /** Set by App: the direction the player is looking, radians. */
+    this.getFacing = null;
     this.respawnDelay = respawnDelay;
     this.respawnTimer = 0;
     // Monotonic, so replacements keep walking around the golden-angle ring
@@ -43,13 +55,29 @@ export class DummyField {
     for (let i = 0; i < this.count; i++) this._spawnAt(this._nextIndex++);
   }
 
+  /**
+   * Spawn one, far out and roughly ahead.
+   *
+   * The ring this used to place was right for a third-person camera looking
+   * down at a stage: everything visible at once, nothing behind you. In first
+   * person it put half the dummies out of frame and the other half already on
+   * top of you, with nothing to watch them do.
+   *
+   * So they arrive from a distance, biased toward wherever the view is pointing
+   * — far enough to be a silhouette first, spread wide enough that they do not
+   * queue up in a line. A quarter still come from behind, because a horde that
+   * only ever appears in front is a shooting gallery.
+   */
   _spawnAt(index) {
-    // Golden-angle placement rather than an even ring: an even ring lines the
-    // dummies up so a line cast either misses everything or hits a whole row,
-    // which flatters the effect dishonestly.
-    const angle = index * 2.399963;
-    const distance = this.radius * (0.55 + 0.45 * ((index % 3) / 2));
-    _position.set(Math.cos(angle) * distance, 0, Math.sin(angle) * distance);
+    const facing = this.getFacing?.() ?? 0;
+    // Golden angle again, but as a spread around the view rather than around
+    // the player: consecutive spawns never share a bearing.
+    const wander = ((index * 2.399963) % (Math.PI * 2)) - Math.PI;
+    const behind = index % 4 === 3;
+    const bearing = facing + (behind ? Math.PI + wander * 0.35 : wander * this.spread);
+
+    const distance = this.minDistance + ((index * 37) % 100) / 100 * (this.maxDistance - this.minDistance);
+    _position.set(Math.sin(bearing) * distance, 0, Math.cos(bearing) * distance);
     this.enemies.spawn(_position);
   }
 

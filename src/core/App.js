@@ -42,6 +42,8 @@ import { SceneSelector } from '../ui/SceneSelector.js';
 import { MiniMap } from '../ui/MiniMap.js';
 import { DirectionPad } from '../ui/DirectionPad.js';
 import { StatusBar } from '../ui/StatusBar.js';
+import { FirstPersonView } from './FirstPersonView.js';
+import { FirstPersonHands } from '../world/FirstPersonHands.js';
 import { Mana } from '../gameplay/Mana.js';
 import { SCENES, DEFAULT_SCENE, findScene } from '../config/scenes.js';
 import { VoiceHUD } from '../ui/VoiceHUD.js';
@@ -221,6 +223,42 @@ export class App {
       this.dummies = new DummyField(this.enemies);
       this.mana = new Mana();
       this.statusBar = new StatusBar(document.body);
+
+      /*
+       * First person. The body comes off and the camera goes where its head
+       * was — you cannot see your own model from inside it, and leaving it
+       * rendered means looking at the inside of a torso.
+       */
+      if (settings.camera.firstPerson) {
+        this.firstPerson = new FirstPersonView(this.camera, canvas);
+        this.firstPerson.enabled = true;
+        this.hands = new FirstPersonHands(this.camera);
+        this.hands.setVisible(true);
+        /*
+         * The camera has to join the scene graph.
+         *
+         * three renders what is under the scene, and a camera is not under it by
+         * default — so anything parented to the camera is never traversed and
+         * never drawn. The hands were built, visible, and on a layer the camera
+         * could see, and still nothing appeared.
+         */
+        this.scene.add(this.camera);
+        this.character.root.visible = false;
+        /*
+         * And the relic goes. In third person it was the centrepiece the fight
+         * happened around; in first person the camera stands exactly where it
+         * is, so it renders as a cyan band across the middle of the view — you
+         * are inside it.
+         */
+        this.relic.root.visible = false;
+        // OrbitControls and a first-person look would fight over the same
+        // pointer and the same camera every frame.
+        this.rig.controls.enabled = false;
+        // A press that never became a drag is an aim, not a look.
+        this.firstPerson.onTap = () => this.aim.confirm();
+        // Dummies arrive from wherever the view is pointing.
+        this.dummies.getFacing = () => this.firstPerson.yaw + Math.PI;
+      }
       this.voiceHUD = new VoiceHUD(document.body);
       this.voice = new VoiceController({
         abilities: this.abilities,
@@ -232,6 +270,7 @@ export class App {
         // the body and burns the cooldown exactly like a clicked one.
         onCast: (element) => {
           this.mana?.spend();
+          this.hands?.punch();
           this.selectAbility(element);
           this.cooldowns.set(element, this._cooldownFor(element));
           this.character.setFacing(this.voice.targets.yaw);
@@ -881,6 +920,7 @@ export class App {
   _updateMovement(dt) {
     if (!this.canControl) {
       this.character.setLocomotion('idle');
+      this._moveSpeed = 0;
       return;
     }
     const strafe = Number(this.input.isDown('KeyD')) - Number(this.input.isDown('KeyA'));
@@ -888,13 +928,21 @@ export class App {
 
     if (strafe === 0 && forward === 0) {
       this.character.setLocomotion('idle');
+      this._moveSpeed = 0;
       return;
     }
 
     const running = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight');
+    // Drives the hands' stride swing. Taken here rather than asked of the
+    // character, which reports an animation state rather than a speed.
+    this._moveSpeed = running ? 1 : 0.55;
     this.character.setLocomotion(running ? 'run' : 'walk');
 
-    this.camera.getWorldDirection(this._moveForward);
+    // In first person the eyes are the body: forward is where you are looking,
+    // taken from the look angles rather than from the camera matrix, which is
+    // written later in the frame and would be one frame stale here.
+    if (this.firstPerson) this.firstPerson.getForward(this._moveForward);
+    else this.camera.getWorldDirection(this._moveForward);
     this._moveForward.y = 0;
     if (this._moveForward.lengthSq() < 1e-6) this._moveForward.set(0, 0, -1);
     else this._moveForward.normalize();
@@ -1186,9 +1234,15 @@ export class App {
      * Aligning first meant being overwritten in the same frame — measured at
      * 3.96m and -14.5 degrees against the 2.5m and -6 that were asked for.
      */
+    if (this.firstPerson) {
+      this.firstPerson.position.set(this.character.position.x, 0, this.character.position.z);
+      this.firstPerson.update();
+      this.hands?.update(raw, this._moveSpeed ?? 0);
+    }
+
     if (this.streetView) {
       this._walkTheStreet();
-      this._alignCameraToStreet();
+      if (!this.firstPerson) this._alignCameraToStreet();
       this.streetView.sync(this.camera);
       this._updateMiniMap();
     }
@@ -1262,6 +1316,8 @@ export class App {
 
   dispose() {
     this.stop();
+    this.hands?.dispose();
+    this.firstPerson?.dispose();
     this.statusBar?.dispose();
     this.directionPad?.dispose();
     this.miniMap?.dispose();
