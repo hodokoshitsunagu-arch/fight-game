@@ -124,8 +124,40 @@ export class StreetViewBackdrop {
   async load() {
     try {
       const maps = await loadMapsApi(this.key);
+
+      /*
+       * Resolve an official panorama before showing anything.
+       *
+       * Handing a coordinate straight to the viewer takes whatever is nearest,
+       * and in a place as photographed as Times Square that is usually somebody's
+       * uploaded photosphere. Those are standalone: `getLinks()` comes back
+       * empty, because they are not part of the road graph — measured at zero
+       * links, which is to say nowhere to walk. Google's car coverage is
+       * connected, so asking the service for `OUTDOOR` is what makes movement
+       * possible at all, quite apart from being the better image.
+       */
+      const service = new maps.StreetViewService();
+      let pano = null;
+      try {
+        const { data } = await service.getPanorama({
+          location: this.position,
+          radius: 80,
+          source: maps.StreetViewSource?.OUTDOOR ?? undefined
+        });
+        pano = data?.location?.pano ?? null;
+        if (data?.location?.latLng) {
+          this.position = { lat: data.location.latLng.lat(), lng: data.location.latLng.lng() };
+        }
+        this.resolved = pano ? 'outdoor' : 'none';
+        this.resolvedPano = pano;
+      } catch (error) {
+        // No outdoor coverage within reach; fall back to whatever is nearest,
+        // which still shows a street even if it cannot be walked.
+        this.resolved = `failed: ${error?.message ?? error}`.slice(0, 120);
+      }
+
       this.panorama = new maps.StreetViewPanorama(this.element, {
-        position: this.position,
+        ...(pano ? { pano } : { position: this.position }),
         pov: { heading: 0, pitch: 0 },
         // Google's own car imagery, not a user-uploaded photosphere. Times
         // Square has plenty of both, and the nearest pano to a coordinate is
@@ -159,7 +191,43 @@ export class StreetViewBackdrop {
         setTimeout(resolve, 6000);
       });
 
+      /*
+       * Re-assert the resolved panorama.
+       *
+       * Observed intermittently landing back on a standalone photosphere even
+       * after the service returned an outdoor pano — the viewer settles on its
+       * own nearest match while the constructor options are still being
+       * applied. Setting it again once the viewer is up makes it stick.
+       */
+      if (pano && this.panorama.getPano?.() !== pano) {
+        this.panorama.setPano(pano);
+        await new Promise((resolve) => {
+          const once = this.panorama.addListener('pano_changed', () => { once.remove(); resolve(); });
+          setTimeout(resolve, 3000);
+        });
+      }
+
       this.ready = true;
+      this.walkable = (this.panorama.getLinks?.() ?? []).length > 0;
+
+      /*
+       * Self-heal onto walkable coverage.
+       *
+       * Resolving an outdoor panorama up front works most of the time and not
+       * all of the time — observed landing back on a standalone photosphere on
+       * some loads with the identical code path, which is a race inside the
+       * viewer rather than anything reachable from here. Rather than chase it,
+       * the outcome is checked: no links means no road graph, which means
+       * nowhere to walk, so the service is asked again and the answer applied
+       * to a viewer that is now fully up.
+       */
+      if (!this.walkable) {
+        await this.moveTo(this.position.lat, this.position.lng, 80);
+        await new Promise((r) => setTimeout(r, 900));
+        this.walkable = (this.panorama.getLinks?.() ?? []).length > 0;
+      }
+
+      this.finalPano = this.panorama.getPano?.() ?? null;
       return true;
     } catch (error) {
       this.error = error.message;
@@ -205,6 +273,84 @@ export class StreetViewBackdrop {
     this._zoom = zoom;
     this.panorama.setPov({ heading, pitch });
     this.panorama.setZoom(zoom);
+  }
+
+  /**
+   * Step to the neighbouring panorama nearest a heading.
+   *
+   * Uses the links the viewer already has rather than asking the service for a
+   * location, which costs nothing extra and is what "walking down the street"
+   * actually is — Street View is a graph of capture points, not a continuous
+   * space, so movement is a hop to the next node in roughly the right
+   * direction. Refuses when the nearest link is off by more than a quarter
+   * turn: stepping sideways into a different street because nothing better was
+   * on offer is worse than not moving.
+   *
+   * @param {number} heading degrees clockwise from north
+   * @returns {boolean} whether a step was taken
+   */
+  step(heading) {
+    if (!this.ready || !this.panorama || this._stepping) return false;
+
+    const links = this.panorama.getLinks?.() ?? [];
+    if (!links.length) return false;
+
+    let best = null;
+    let bestOffset = Infinity;
+    for (const link of links) {
+      if (typeof link?.heading !== 'number' || !link.pano) continue;
+      // Signed difference folded into [-180, 180], then magnitude.
+      const offset = Math.abs(((link.heading - heading + 540) % 360) - 180);
+      if (offset < bestOffset) {
+        bestOffset = offset;
+        best = link;
+      }
+    }
+
+    if (!best || bestOffset > 90) return false;
+
+    this._stepping = true;
+    this.panorama.setPano(best.pano);
+    // Cleared on the viewer's own signal, so a slow tile load cannot be
+    // outrun by another step request.
+    const done = this.panorama.addListener('pano_changed', () => {
+      done.remove();
+      this._stepping = false;
+      const p = this.panorama.getPosition?.();
+      if (p) this.position = { lat: p.lat(), lng: p.lng() };
+    });
+    setTimeout(() => { this._stepping = false; }, 4000);
+    return true;
+  }
+
+  /**
+   * Jump somewhere else entirely.
+   *
+   * Goes through `StreetViewService` rather than assigning the coordinate
+   * directly: an arbitrary lat/lng usually has no panorama exactly on it, and
+   * the viewer would land on whatever happens to be nearest — including indoor
+   * and user-submitted spheres. This asks for outdoor coverage within a radius
+   * and reports honestly when there is none.
+   *
+   * @returns {Promise<boolean>}
+   */
+  async moveTo(lat, lng, radius = 60) {
+    if (!this.ready || !window.google?.maps) return false;
+    const maps = window.google.maps;
+    this._service ??= new maps.StreetViewService();
+    try {
+      const { data } = await this._service.getPanorama({
+        location: { lat, lng },
+        radius,
+        source: maps.StreetViewSource?.OUTDOOR ?? undefined
+      });
+      if (!data?.location?.pano) return false;
+      this.panorama.setPano(data.location.pano);
+      this.position = { lat, lng };
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   setPosition(position) {

@@ -452,6 +452,43 @@ export class App {
   }
 
   /**
+   * Walking moves the street, not the player.
+   *
+   * The scene is pinned to the panorama's capture point, so a player who
+   * actually walked away from it would drag the whole fight out of frame while
+   * the backdrop stayed put. Instead the walk is spent on stepping to the next
+   * panorama and the character is returned to the middle — a treadmill, with
+   * the world doing the moving.
+   *
+   * Distance is banked rather than applied per frame because Street View is a
+   * graph of capture points, not a continuous space: there is nowhere to be
+   * between two of them, so the walk accumulates until it is worth a hop.
+   */
+  _walkTheStreet() {
+    const character = this.character;
+    const walked = Math.hypot(character.position.x, character.position.z);
+    if (walked < 0.001) return;
+
+    if (walked < settings.environment.streetViewStepMetres) return;
+
+    // Heading in Street View's terms: clockwise from north.
+    const heading = (Math.atan2(character.position.x, -character.position.z) * 180) / Math.PI;
+    /*
+     * Only recentre if the street actually moved. Resetting on a refused step
+     * swallowed the walk silently: the distance banked, hit the threshold, was
+     * thrown away, and the player stood in the same place having walked seven
+     * metres. A refusal has to leave the banked distance alone so the next
+     * heading gets a turn.
+     */
+    if (!this.streetView.step(heading)) return;
+
+    character.position.set(0, character.position.y, 0);
+    character.root.position.x = 0;
+    character.root.position.z = 0;
+    this.rig.setAnchor(0, 0, 0);
+  }
+
+  /**
    * Put the game's ground plane on the street.
    *
    * Two projections have to agree. Street View draws a sphere from a camera
@@ -1042,6 +1079,7 @@ export class App {
      * 3.96m and -14.5 degrees against the 2.5m and -6 that were asked for.
      */
     if (this.streetView) {
+      this._walkTheStreet();
       this._alignCameraToStreet();
       this.streetView.sync(this.camera);
     }

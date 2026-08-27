@@ -2153,6 +2153,15 @@ export const settings = {
     // Hide scene furniture that has no business standing in a real street.
     streetViewHideRelicBase: true,
     /*
+     * Metres of walking that buy one step down the street.
+     *
+     * Street View is a graph of capture points roughly ten metres apart, not a
+     * continuous space, so movement is discrete however it is driven. Too small
+     * a threshold and every footfall teleports; too large and walking feels
+     * like it does nothing.
+     */
+    streetViewStepMetres: 5,
+    /*
      * Where the backdrop comes from.
      *
      * Empty means reuse the lighting probe, which costs nothing extra. Point it
