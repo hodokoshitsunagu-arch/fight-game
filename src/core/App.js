@@ -39,6 +39,7 @@ import { VoiceController } from '../voice/VoiceController.js';
 import { DummyField } from '../sandbox/DummyField.js';
 import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
 import { SceneSelector } from '../ui/SceneSelector.js';
+import { MiniMap } from '../ui/MiniMap.js';
 import { SCENES, DEFAULT_SCENE, findScene } from '../config/scenes.js';
 import { VoiceHUD } from '../ui/VoiceHUD.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
@@ -452,6 +453,45 @@ export class App {
 
     this._alignCameraToStreet();
     this._buildSceneSelector();
+    this._buildMiniMap();
+  }
+
+  /**
+   * The companion map.
+   *
+   * Street View alone shows none of position, facing or exits — it is a sphere,
+   * with no horizon to orient against and no sign that walking is possible until
+   * you try it. Costs one Dynamic Maps load on top of the Street View request,
+   * which is why it is created once for the session rather than per scene.
+   */
+  _buildMiniMap() {
+    if (!window.google?.maps) return;
+    this.miniMap = new MiniMap(document.body);
+    const survey = this.streetView.survey();
+    this.miniMap.attach(window.google.maps, survey?.position ?? {
+      lat: settings.environment.streetViewLat,
+      lng: settings.environment.streetViewLng
+    });
+    if (survey) this.miniMap.setPosition(survey.position, survey.links);
+    this._miniMapPano = survey?.pano ?? null;
+  }
+
+  /**
+   * Keep the map in step with the panorama.
+   *
+   * The heading is written every frame because turning is continuous; the
+   * position only when the panorama id actually changes, since recentring a map
+   * and rebuilding a set of polylines is not something to do sixty times a
+   * second for a value that has not moved.
+   */
+  _updateMiniMap() {
+    if (!this.miniMap?.ready) return;
+    this.miniMap.setHeading(this.streetView.heading ?? 0);
+
+    const survey = this.streetView.survey();
+    if (!survey || survey.pano === this._miniMapPano) return;
+    this._miniMapPano = survey.pano;
+    this.miniMap.setPosition(survey.position, survey.links);
   }
 
   /**
@@ -1128,6 +1168,7 @@ export class App {
       this._walkTheStreet();
       this._alignCameraToStreet();
       this.streetView.sync(this.camera);
+      this._updateMiniMap();
     }
 
     this.contactShadows.setPosition(this.character.position.x, this.character.position.z);
@@ -1199,6 +1240,7 @@ export class App {
 
   dispose() {
     this.stop();
+    this.miniMap?.dispose();
     this.sceneSelector?.dispose();
     this.streetView?.dispose();
     if (this.sandbox) {

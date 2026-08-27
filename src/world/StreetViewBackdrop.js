@@ -271,6 +271,8 @@ export class StreetViewBackdrop {
     this._heading = heading;
     this._pitch = pitch;
     this._zoom = zoom;
+    // Read by the mini map, which draws the same angle as a cone.
+    this.heading = heading;
     this.panorama.setPov({ heading, pitch });
     this.panorama.setZoom(zoom);
   }
@@ -351,6 +353,24 @@ export class StreetViewBackdrop {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Current position and the exits from it.
+   *
+   * Both come from the viewer rather than being tracked alongside it: a step
+   * lands when the tiles do, and anything mirroring that state would be a frame
+   * or two stale exactly when it matters.
+   */
+  survey() {
+    if (!this.ready || !this.panorama) return null;
+    const p = this.panorama.getPosition?.();
+    if (!p) return null;
+    return {
+      position: { lat: p.lat(), lng: p.lng() },
+      links: this.panorama.getLinks?.() ?? [],
+      pano: this.panorama.getPano?.() ?? null
+    };
   }
 
   setPosition(position) {
