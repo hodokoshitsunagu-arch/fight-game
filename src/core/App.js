@@ -40,6 +40,9 @@ import { DummyField } from '../sandbox/DummyField.js';
 import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
 import { SceneSelector } from '../ui/SceneSelector.js';
 import { MiniMap } from '../ui/MiniMap.js';
+import { DirectionPad } from '../ui/DirectionPad.js';
+import { StatusBar } from '../ui/StatusBar.js';
+import { Mana } from '../gameplay/Mana.js';
 import { SCENES, DEFAULT_SCENE, findScene } from '../config/scenes.js';
 import { VoiceHUD } from '../ui/VoiceHUD.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
@@ -216,6 +219,8 @@ export class App {
     if (this.sandbox) {
       this.gameUI.setSandbox(true);
       this.dummies = new DummyField(this.enemies);
+      this.mana = new Mana();
+      this.statusBar = new StatusBar(document.body);
       this.voiceHUD = new VoiceHUD(document.body);
       this.voice = new VoiceController({
         abilities: this.abilities,
@@ -226,6 +231,7 @@ export class App {
         // Reuse the keyboard cast's own follow-through, so a spoken cast throws
         // the body and burns the cooldown exactly like a clicked one.
         onCast: (element) => {
+          this.mana?.spend();
           this.selectAbility(element);
           this.cooldowns.set(element, this._cooldownFor(element));
           this.character.setFacing(this.voice.targets.yaw);
@@ -475,10 +481,12 @@ export class App {
     if (survey) this.miniMap.setPosition(survey.position, survey.links);
     this._miniMapPano = survey?.pano ?? null;
 
-    // Tapping a direction is the other way to move: walking banks distance,
-    // this goes immediately. Both end up in the same `step`.
-    this.miniMap.onStep = (relative) => this.streetView.stepRelative(relative);
+    // Tapping an exit on the map is the precise move; the pad below is the
+    // coarse one. Both end up in the same `step`.
     this.miniMap.onStepHeading = (heading) => this.streetView.step(heading);
+
+    this.directionPad = new DirectionPad(document.body);
+    this.directionPad.onStep = (relative) => this.streetView.stepRelative(relative);
   }
 
   /**
@@ -495,7 +503,7 @@ export class App {
     // Availability turns with the camera, not just with the panorama: the same
     // junction offers different forward/left/right depending on which way you
     // are looking.
-    this.miniMap.setDirections(this.streetView.availableDirections());
+    this.directionPad?.setAvailable(this.streetView.availableDirections());
 
     const survey = this.streetView.survey();
     if (!survey || survey.pano === this._miniMapPano) return;
@@ -1141,6 +1149,11 @@ export class App {
     // viewer is told where the camera looks and draws its own pixels.
     if (this.sandbox) {
       this.dummies.update(raw);
+      this.mana.update(raw);
+      this.statusBar.update(
+        { current: this.session.player.currentHP, max: this.session.player.maxHP },
+        { current: this.mana.current, max: this.mana.max }
+      );
       // Real time, deliberately: the window for a trailing modifier is a
       // property of how fast someone talks, not of the simulation clock.
       this.voice.update(raw);
@@ -1249,6 +1262,8 @@ export class App {
 
   dispose() {
     this.stop();
+    this.statusBar?.dispose();
+    this.directionPad?.dispose();
     this.miniMap?.dispose();
     this.sceneSelector?.dispose();
     this.streetView?.dispose();

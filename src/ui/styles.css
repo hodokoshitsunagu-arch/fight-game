@@ -166,7 +166,7 @@ body {
   position: absolute;
   right: 10px;
   top: 10px;
-  width: 148px;
+  width: 152px;
   max-width: 42vw;
   display: flex;
   flex-direction: column;
@@ -187,7 +187,10 @@ body {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 9px 11px;
+  /* 40px exactly: the status bars and the scene selector are 40, and the three
+     of them are meant to read as one band across the top. */
+  height: 40px;
+  padding: 0 11px;
   border-radius: var(--ui-radius);
   border: 1px solid var(--ui-border);
   background: var(--ui-bg);
@@ -297,7 +300,11 @@ body {
   /* Two lines rather than an ellipsis: "GRAVITY SINGULARITY" truncated to
      "GRAVITY SI..." hides the word you have to say. */
   white-space: normal;
-  overflow-wrap: anywhere;
+  /* Break at spaces first. `anywhere` split "GRAVITY SINGULARITY" into
+     "SINGULARIT / Y", which is worse than a narrow column. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
   /* The base rule reserves 27px for the two-line centred layout of the old
      bottom bar; in the strip that is dead vertical space. */
   min-height: 0;
@@ -989,11 +996,6 @@ body {
   gap: 18px;
 }
 
-/* Keeps the mic optically centred against the help button. */
-.voice-hud__spacer {
-  width: 38px;
-}
-
 .voice-hud__mic {
   position: relative;
   display: grid;
@@ -1056,9 +1058,19 @@ body {
   100% { opacity: 0; transform: scale(1.32); }
 }
 
+/*
+ * Above the microphone, and faint.
+ *
+ * It used to sit beside the mic, which put a permanent second button in the
+ * one place the thumb has to hit without looking. Stacked and semi-transparent
+ * it stays reachable and stops competing.
+ */
 .voice-hud__help-btn {
-  width: 38px;
-  height: 38px;
+  align-self: center;
+  margin-bottom: 8px;
+  opacity: 0.45;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid var(--ui-border);
   background: rgba(14, 19, 28, 0.7);
@@ -1073,6 +1085,7 @@ body {
 }
 
 .voice-hud__help-btn:active {
+  opacity: 0.9;
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -1109,13 +1122,12 @@ body {
   }
 
   .hud__abilities {
-    width: 128px;
+    width: 112px;
     right: 8px;
-    /* Below the scene selector, which owns the top-centre row. A 280px
-       selector centred on a 390px screen reaches 335px, and the strip starts
-       at 254 — they collided, so the strip takes the next row down. */
-    top: 58px;
-    max-height: calc(100vh - 190px);
+    /* Back on the top row. The selector is half its old width and centred now,
+       so the three panels sit side by side instead of stacking. */
+    top: 10px;
+    max-height: calc(100vh - 150px);
   }
 
   .hud__abilities-body {
@@ -1138,7 +1150,9 @@ body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 45;
-  width: min(300px, calc(100vw - 24px));
+  /* Half of what it was: the top edge is shared with the status bars and the
+     spell strip now, and it was taking width neither of them could spare. */
+  width: min(152px, calc(50vw - 20px));
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1351,7 +1365,10 @@ body {
 
 @media (max-width: 760px) {
   .scene-selector {
-    width: min(280px, calc(100vw - 20px));
+    /* Half of the 280 it used to be, as asked. The panels either side are
+       trimmed to make room rather than this one being squeezed below the width
+       its own labels need — at 108 the names truncated to "时…". */
+    width: 140px;
   }
 
   .hud__toast {
@@ -1370,9 +1387,9 @@ body {
 
 .minimap {
   position: fixed;
-  /* Bottom left is the last free corner: the strip owns the right, the
-     microphone owns the centre, the selector owns the top. */
-  left: 10px;
+  /* Bottom right. The direction pad has the bottom left, the microphone the
+     centre, and the top edge belongs to the three aligned panels. */
+  right: 10px;
   bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   z-index: 42;
   width: 152px;
@@ -1506,82 +1523,177 @@ body {
 
 @media (max-width: 760px) {
   .minimap {
-    width: 140px;
-    height: 140px;
-    /* Above the microphone row rather than beside it. */
-    bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+    width: 128px;
+    height: 128px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   }
 }
 
-/* Direction pad — the forward/back/left/right Street View's own arrows would
-   give, which are turned off because the game owns the pointer. */
-.minimap__pad {
-  position: absolute;
-  inset: 0;
+/* ------------------------------------------------------------------ *
+ * Top edge: status bars, scene selector, spell strip — one line
+ * ------------------------------------------------------------------ */
+
+/*
+ * All three sit at `top: 10px` and stand 40px tall. The top of the screen reads
+ * as a single band that way; a panel of a different height breaks the line and
+ * the whole edge looks accidental.
+ */
+.status-bar {
+  position: fixed;
+  left: 10px;
+  top: 10px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   pointer-events: none;
-  z-index: 3;
+  transition: opacity 0.2s ease;
 }
 
-.minimap__dir {
+.status-bar.is-hidden {
+  opacity: 0;
+}
+
+/* One row, not two stacked: the neighbours are 40px and a status block twice
+   their height would break the band. */
+.status-bar__track {
+  position: relative;
+  width: 74px;
+  height: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.status-bar__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(1);
+  transition: transform 0.24s ease;
+}
+
+.status-bar__fill--hp {
+  background: linear-gradient(90deg, #3fbf6a, #7ce3a0);
+}
+
+.status-bar__fill--mp {
+  background: linear-gradient(90deg, #3a7fd5, #7fc4ff);
+}
+
+.status-bar.is-hp-low .status-bar__fill--hp {
+  background: linear-gradient(90deg, #c8402f, #ff7a5c);
+}
+
+/* Label and number ride inside the bar: a phone has no width for either
+   beside it, and a bar with no number is a feeling rather than a readout. */
+.status-bar__label,
+.status-bar__value {
+  position: absolute;
+  top: 0;
+  line-height: 16px;
+  font: 600 9px/16px var(--ui-font);
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.status-bar__label { left: 5px; }
+.status-bar__value { right: 5px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+
+/* ------------------------------------------------------------------ *
+ * Direction pad — bottom left, standing on its own
+ * ------------------------------------------------------------------ */
+
+.dpad {
+  position: fixed;
+  left: 12px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  z-index: 43;
+  width: 108px;
+  height: 108px;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.dpad.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* A diamond, so each arrow points the way it actually goes — the layout is
+   the label. */
+.dpad__key {
   position: absolute;
   display: grid;
   place-content: center;
-  /* 30px is under the 44px thumb guideline, so the hit area is padded out
-     below rather than the glyph being drawn bigger. */
-  width: 24px;
-  height: 24px;
+  width: 38px;
+  height: 38px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
-  background: rgba(8, 11, 16, 0.7);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  color: rgba(255, 255, 255, 0.28);
-  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 11px;
+  background: rgba(8, 11, 16, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 13px;
   line-height: 1;
   pointer-events: auto;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease,
+    transform 0.12s ease;
 }
 
-/* Enlarges the tap target without enlarging the button. */
-.minimap__dir::after {
-  content: '';
-  position: absolute;
-  inset: -7px;
+.dpad__key--up { top: 0; left: 50%; transform: translateX(-50%); }
+.dpad__key--down { bottom: 0; left: 50%; transform: translateX(-50%); }
+.dpad__key--left { left: 0; top: 50%; transform: translateY(-50%); }
+.dpad__key--right { right: 0; top: 50%; transform: translateY(-50%); }
+
+.dpad__key.is-available {
+  color: #dbeaff;
+  border-color: rgba(143, 183, 255, 0.6);
+  background: rgba(20, 34, 56, 0.8);
 }
 
-.minimap__dir.is-available {
-  color: #cfe4ff;
-  border-color: rgba(143, 183, 255, 0.55);
-  background: rgba(20, 34, 56, 0.82);
+.dpad__key.is-available:active {
+  background: rgba(143, 183, 255, 0.34);
 }
 
-.minimap__dir.is-available:active {
-  background: rgba(143, 183, 255, 0.32);
-}
-
-/* A direction with no link is drawn, but visibly dead — hiding it would make
-   the pad jump about as the exits change from junction to junction. */
-.minimap__dir:disabled {
+/* Dead directions grey out rather than vanish: a pad that changes shape at
+   every junction is harder to use than one that dims. */
+.dpad__key:disabled {
   cursor: default;
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
-.minimap__dir--f { top: 24px; left: 50%; transform: translateX(-50%); }
-.minimap__dir--b { bottom: 20px; left: 50%; transform: translateX(-50%); }
-.minimap__dir--l { left: 6px; top: 50%; transform: translateY(-50%); }
-.minimap__dir--r { right: 6px; top: 50%; transform: translateY(-50%); }
-
-.minimap.is-collapsed .minimap__pad {
-  opacity: 0;
-  pointer-events: none;
+.dpad__hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: rgba(143, 183, 255, 0.5);
 }
 
 @media (max-width: 760px) {
-  .minimap__dir { width: 23px; height: 23px; font-size: 9px; }
-  .minimap__dir--f { top: 22px; }
-  .minimap__dir--b { bottom: 18px; }
+  /* 390px has to hold three panels side by side. Widths are set so the status
+     bars end before the centred selector begins, and the selector ends before
+     the strip. */
+  .status-bar { gap: 4px; padding: 0 6px; }
+  .status-bar__track { width: 46px; }
+
+  .dpad { width: 96px; height: 96px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .dpad__key { width: 34px; height: 34px; font-size: 12px; }
 }

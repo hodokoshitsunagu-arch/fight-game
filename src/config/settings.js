@@ -251,6 +251,18 @@ export const settings = {
   },
 
   player: {
+    /*
+     * Mana. Added with the status bar — the project had health and no second
+     * resource, and a bar that never moves is not a readout.
+     *
+     * `manaBlocksCasting` is off by default on purpose: this build exists to
+     * say a spell and watch it happen, and a resource that can refuse that is a
+     * worse trade than a bar that sometimes sits empty.
+     */
+    maxMP: 120,
+    manaRegen: 14, // per second
+    castCost: 18,
+    manaBlocksCasting: false,
     maxHP: 300,
     respawnDelay: 8,
     respawnHealthPercent: 0.6,

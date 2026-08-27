@@ -16,6 +16,12 @@
  *   the trail     where have I been, which is the only way to tell one identical
  *                 stretch of pavement from another
  *
+ * The direction pad used to live in here and does not any more: two controls
+ * were fighting for the same 150 pixels and the pad won, covering the street
+ * layout that is the only thing a map this small has to say. Tapping an exit
+ * directly still works, and is the precise version of what the pad does
+ * roughly.
+ *
  * The map stays centred on the panorama rather than moving a marker around it,
  * so the cone can be a fixed CSS element in the middle of the box rather than a
  * rotating overlay — the view turns under a stationary player, which is also
@@ -54,27 +60,13 @@ export class MiniMap {
       <div class="minimap__pin" aria-hidden="true"></div>
       <button class="minimap__toggle" data-toggle type="button" aria-label="Toggle map">▾</button>
       <div class="minimap__label" data-label>—</div>
-      <div class="minimap__pad" data-pad>
-        <button class="minimap__dir minimap__dir--f" data-dir="0"    type="button" aria-label="Forward">▲</button>
-        <button class="minimap__dir minimap__dir--r" data-dir="90"   type="button" aria-label="Right">▶</button>
-        <button class="minimap__dir minimap__dir--b" data-dir="180"  type="button" aria-label="Back">▼</button>
-        <button class="minimap__dir minimap__dir--l" data-dir="-90"  type="button" aria-label="Left">◀</button>
-      </div>`;
+`;
     root.appendChild(this.element);
 
-    /** Set by App: `(relativeDeg) => void`. */
-    this.onStep = null;
+    /** Set by App: `(headingDeg) => void`, from tapping an exit. */
+    this.onStepHeading = null;
 
     this.canvas = this.element.querySelector('[data-map]');
-    this.dirs = {};
-    for (const button of this.element.querySelectorAll('[data-dir]')) {
-      this.dirs[button.dataset.dir] = button;
-      button.addEventListener('click', (event) => {
-        event.stopPropagation();
-        if (button.disabled) return;
-        this.onStep?.(Number(button.dataset.dir));
-      });
-    }
     this.cone = this.element.querySelector('[data-cone]');
     this.label = this.element.querySelector('[data-label]');
 
@@ -181,26 +173,6 @@ export class MiniMap {
     if (this._heading !== null && Math.abs(headingDeg - this._heading) < 0.6) return;
     this._heading = headingDeg;
     this.cone.style.transform = `translate(-50%, -100%) rotate(${headingDeg}deg)`;
-  }
-
-  /**
-   * Light up only the directions that lead somewhere.
-   *
-   * A pad that offers four ways out of a street with two teaches the player its
-   * buttons lie, so availability comes from the panorama's own links rather than
-   * being assumed.
-   *
-   * @param {{forward:boolean,right:boolean,back:boolean,left:boolean}} available
-   */
-  setDirections(available) {
-    if (!this.dirs) return;
-    const map = { '0': available.forward, '90': available.right, '180': available.back, '-90': available.left };
-    for (const [key, button] of Object.entries(this.dirs)) {
-      const usable = Boolean(map[key]);
-      if (button.disabled === !usable) continue;
-      button.disabled = !usable;
-      button.classList.toggle('is-available', usable);
-    }
   }
 
   setOpen(open) {

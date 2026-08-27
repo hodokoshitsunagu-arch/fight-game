@@ -38,15 +38,14 @@ export class VoiceHUD {
         <div class="voice-hud__transcript" data-voice-transcript></div>
         <div class="voice-hud__chips" data-voice-chips></div>
       </div>
+      <button class="voice-hud__help-btn" data-voice-help type="button"
+              aria-label="How to play">?</button>
       <div class="voice-hud__controls">
-        <button class="voice-hud__help-btn" data-voice-help type="button"
-                aria-label="How to play">?</button>
         <button class="voice-hud__mic" data-voice-mic type="button"
                 aria-label="Hold to speak">
           <span class="voice-hud__mic-ring" aria-hidden="true"></span>
           <span class="voice-hud__mic-icon">${MIC_ICON}</span>
         </button>
-        <span class="voice-hud__spacer" aria-hidden="true"></span>
       </div>
       <div class="voice-hud__hint" data-voice-hint>长按说话 · HOLD TO SPEAK</div>`;
 
