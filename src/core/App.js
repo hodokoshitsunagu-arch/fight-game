@@ -438,8 +438,69 @@ export class App {
     env.floorShadowOnly = true;
     env.floorScale = 0.6;
     env.ambientIntensity = 0.45;
-    settings.camera.distance = 13;
-    this.rig.setOrbit(1.2, 0.6);
+    settings.camera.distance = 10;
+
+    /*
+     * The relic's base is a 4.3-metre near-black disc, and it was the dark
+     * shape still sitting around the player once the floor went transparent.
+     * The core stays — it is the thing the spells are cast around — but a
+     * plinth has no business standing in a real street.
+     */
+    if (env.streetViewHideRelicBase) this.relic.base.visible = false;
+
+    this._alignCameraToStreet();
+  }
+
+  /**
+   * Put the game's ground plane on the street.
+   *
+   * Two projections have to agree. Street View draws a sphere from a camera
+   * about 2.5 metres above the road; the game draws a plane at y = 0. They line
+   * up only when the game camera sits at that same height above its own plane
+   * and looks along the same horizon — so height is pinned rather than derived
+   * from the orbit, and pitch is held at a fixed shallow angle instead of
+   * following the mouse.
+   *
+   * Roll is zero and stays zero: `OrbitControls` keeps +Y up, and a horizon that
+   * tilts against a photographed street reads as broken instantly.
+   *
+   * Heading is deliberately left free — turning on the spot is the one camera
+   * move that costs nothing here, because Street View turns with it.
+   */
+  _alignCameraToStreet() {
+    const env = settings.environment;
+    const rig = this.rig;
+    const eye = env.streetViewEyeHeight;
+    const camera = this.camera;
+
+    // Whichever way it is already facing, and how far out it already is.
+    const dx = camera.position.x - rig.anchor.x;
+    const dz = camera.position.z - rig.anchor.z;
+    const radius = Math.max(1, Math.hypot(dx, dz));
+    const heading = Math.atan2(dx, dz);
+
+    camera.position.set(
+      rig.anchor.x + radius * Math.sin(heading),
+      eye,
+      rig.anchor.z + radius * Math.cos(heading)
+    );
+    camera.up.set(0, 1, 0);
+    camera.lookAt(
+      rig.anchor.x,
+      eye - radius * Math.tan((env.streetViewPitch * Math.PI) / 180),
+      rig.anchor.z
+    );
+    /*
+     * `controls.update()` is deliberately not called.
+     *
+     * OrbitControls does not store its angles — it re-derives them from the
+     * camera's position, applies its own damped spherical state, and writes the
+     * position back. Calling it here undid the assignment in the same frame:
+     * measured at 3.9m and -14 degrees against the 2.5m and -6 asked for.
+     * Writing after the rig has run, and leaving the controls alone, is what
+     * makes the values stick.
+     */
+    camera.updateMatrixWorld(true);
   }
 
   /** An on-screen explanation, because a black backdrop explains nothing. */
@@ -946,8 +1007,6 @@ export class App {
 
     // The backdrop is a DOM layer, so it is turned rather than rendered: the
     // viewer is told where the camera looks and draws its own pixels.
-    this.streetView?.sync(this.camera);
-
     if (this.sandbox) {
       this.dummies.update(raw);
       // Real time, deliberately: the window for a trailing modifier is a
@@ -975,6 +1034,17 @@ export class App {
     this.flash.update(raw);
     this.playerHitFeedback.update(raw);
     this.rig.update(raw);
+
+    /*
+     * After the rig, not before: `rig.update` is the last thing that moves the
+     * camera, and it damps toward its own idea of where the camera belongs.
+     * Aligning first meant being overwritten in the same frame — measured at
+     * 3.96m and -14.5 degrees against the 2.5m and -6 that were asked for.
+     */
+    if (this.streetView) {
+      this._alignCameraToStreet();
+      this.streetView.sync(this.camera);
+    }
 
     this.contactShadows.setPosition(this.character.position.x, this.character.position.z);
     this.contactShadows.render(this.scene);

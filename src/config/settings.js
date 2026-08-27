@@ -2138,6 +2138,21 @@ export const settings = {
     streetViewLat: 40.758,   // Times Square
     streetViewLng: -73.9855,
     /*
+     * Height of Street View's own camera above the road, metres.
+     *
+     * This is what aligns the two worlds. Street View projects a sphere from
+     * roughly the roof of a car; the game projects a plane at y = 0. Put the
+     * game camera at the same height above its plane and the two grounds
+     * coincide, so a figure standing at y = 0 stands on the street rather than
+     * hovering over it or sinking into it.
+     */
+    streetViewEyeHeight: 2.5,
+    // Degrees below level. Zero puts the horizon exactly across the middle,
+    // which is where Street View's is, and is what keeps the plane aligned.
+    streetViewPitch: 6,
+    // Hide scene furniture that has no business standing in a real street.
+    streetViewHideRelicBase: true,
+    /*
      * Where the backdrop comes from.
      *
      * Empty means reuse the lighting probe, which costs nothing extra. Point it
