@@ -222,8 +222,8 @@ test('sky decodes to the far clamp rather than to infinity', () => {
 
 test('the generated Shibuya pair is present and paired', async () => {
   const fs = await import('node:fs');
-  const colour = 'public/hdri/shibuya_crossing.png';
-  const depth = 'public/hdri/shibuya_crossing_depth.png';
+  const colour = 'public/self-created/shibuya_crossing.png';
+  const depth = 'public/self-created/shibuya_crossing_depth.png';
   assert.ok(fs.existsSync(colour), 'panorama exists');
   assert.ok(fs.existsSync(depth), 'depth map exists');
 

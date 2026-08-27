@@ -1,9 +1,9 @@
 /**
  * Calls the configured image model for an equirectangular panorama.
  *
- *   node tools/generate-panorama.mjs out-raw.jpg "your prompt"
+ *   node self-created/generate-panorama.mjs out-raw.jpg "your prompt"
  *
- * Then run `tools/process-panorama.mjs` on the result: the model cannot emit
+ * Then run `self-created/process-panorama.mjs` on the result: the model cannot emit
  * 2:1, cannot make the edges wrap, and cannot produce depth, and that script
  * fixes all three.
  *

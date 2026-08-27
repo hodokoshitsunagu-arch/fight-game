@@ -1,5 +1,5 @@
 /**
- *   node tools/process-panorama.mjs raw.jpg public/hdri/name
+ *   node self-created/process-panorama.mjs raw.jpg public/self-created/name
  *
  * Turns the generated image into an equirectangular pair the engine can use:
  * a strict 2:1 panorama, and a depth map derived from it.
@@ -21,7 +21,7 @@ const puppeteer = require('puppeteer');
 const SRC = process.argv[2];
 const OUT = process.argv[3];
 if (!SRC || !OUT) {
-  console.error('usage: node tools/process-panorama.mjs <raw.jpg> <public/hdri/name> [eyeHeight=2.2] [ringMetres=38]');
+  console.error('usage: node self-created/process-panorama.mjs <raw.jpg> <public/self-created/name> [eyeHeight=2.2] [ringMetres=38]');
   process.exit(1);
 }
 
