@@ -2185,6 +2185,21 @@ export const settings = {
      */
     streetViewStepMetres: 5,
     /*
+     * Warm the panorama straight ahead.
+     *
+     * With double buffering a step is no longer black, but it still waits. The
+     * only way to make it instant is to have the destination already up in the
+     * idle viewer — so after each move the forward-most exit is loaded there,
+     * and stepping that way becomes a cross-fade with nothing to download.
+     *
+     * The costs, stated rather than buried: it is one extra billed panorama
+     * load per move, wasted whenever the player turns instead; and it loads a
+     * panorama nobody asked for, which is a speculative fetch by any reading.
+     * Limited to the single most likely exit for both reasons — never the whole
+     * junction. Set false to pay neither.
+     */
+    streetViewPreloadAhead: true,
+    /*
      * Where the backdrop comes from.
      *
      * Empty means reuse the lighting probe, which costs nothing extra. Point it

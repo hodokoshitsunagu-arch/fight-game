@@ -25,6 +25,8 @@
  *  - **It needs the network, every session.** Nothing is cached, by design.
  */
 
+import { settings } from '../config/settings.js';
+
 const SCRIPT_ID = 'google-maps-js';
 
 /** Times Square, on the pedestrian island at the middle of the bowtie. */
@@ -101,6 +103,21 @@ export class StreetViewBackdrop {
     this.ready = false;
     this.error = null;
 
+    /*
+     * Two viewers, not one.
+     *
+     * `setPano` on a live viewer blanks it while the new tiles arrive —
+     * measured at a full second of black between the old panorama vanishing and
+     * the new one appearing, with the game still rendering on top of nothing.
+     *
+     * So the incoming panorama loads in a second viewer that nobody is looking
+     * at, and the two cross-fade once it is ready. The wait is the same length;
+     * it is just spent looking at where you were instead of at black.
+     *
+     * Note what this is *not*: nothing is pre-fetched or stored. Both viewers
+     * are Google's own, rendering their own pixels on demand, which is the only
+     * arrangement the Maps terms allow.
+     */
     this.element = document.createElement('div');
     this.element.id = 'streetview';
     // Behind the canvas, and deaf to input: the game owns the pointer, and a
@@ -113,6 +130,20 @@ export class StreetViewBackdrop {
       'position:fixed; top:0; left:0; width:100vw; height:100vh;' +
         ' z-index:0; pointer-events:none; background:#0a0d12;'
     );
+    this.panes = [0, 1].map((index) => {
+      const pane = document.createElement('div');
+      pane.className = 'streetview__pane';
+      pane.setAttribute(
+        'style',
+        'position:absolute; inset:0; opacity:' + (index === 0 ? '1' : '0') +
+          '; transition:opacity .28s ease;'
+      );
+      this.element.appendChild(pane);
+      return pane;
+    });
+    this.viewers = [null, null];
+    this.active = 0;
+
     document.body.insertBefore(this.element, document.body.firstChild);
 
     this._heading = 0;
@@ -156,7 +187,7 @@ export class StreetViewBackdrop {
         this.resolved = `failed: ${error?.message ?? error}`.slice(0, 120);
       }
 
-      this.panorama = new maps.StreetViewPanorama(this.element, {
+      const options = {
         ...(pano ? { pano } : { position: this.position }),
         pov: { heading: 0, pitch: 0 },
         // Google's own car imagery, not a user-uploaded photosphere. Times
@@ -179,7 +210,14 @@ export class StreetViewBackdrop {
         clickToGo: false,
         scrollwheel: false,
         disableDoubleClickZoom: true
-      });
+      };
+
+      this.viewers = this.panes.map((pane, index) =>
+        new maps.StreetViewPanorama(pane, index === 0 ? options : { ...options, visible: false })
+      );
+      // `panorama` stays the one on screen, so everything reading it — the map,
+      // the pad, the survey — needs no knowledge that there are two.
+      this.panorama = this.viewers[0];
 
       // `status` is how a location with no coverage reports itself; the
       // constructor succeeds regardless.
@@ -312,16 +350,9 @@ export class StreetViewBackdrop {
     if (!best || bestOffset > 90) return false;
 
     this._stepping = true;
-    this.panorama.setPano(best.pano);
-    // Cleared on the viewer's own signal, so a slow tile load cannot be
-    // outrun by another step request.
-    const done = this.panorama.addListener('pano_changed', () => {
-      done.remove();
-      this._stepping = false;
-      const p = this.panorama.getPosition?.();
-      if (p) this.position = { lat: p.lat(), lng: p.lng() };
-    });
-    setTimeout(() => { this._stepping = false; }, 4000);
+    // Through the buffer, so the street being left stays on screen until the
+    // one being arrived at is ready to replace it.
+    this._swapTo(best.pano).finally(() => { this._stepping = false; });
     return true;
   }
 
@@ -383,7 +414,7 @@ export class StreetViewBackdrop {
         source: maps.StreetViewSource?.OUTDOOR ?? undefined
       });
       if (!data?.location?.pano) return false;
-      this.panorama.setPano(data.location.pano);
+      await this._swapTo(data.location.pano);
       this.position = { lat, lng };
       return true;
     } catch {
@@ -407,6 +438,115 @@ export class StreetViewBackdrop {
       links: this.panorama.getLinks?.() ?? [],
       pano: this.panorama.getPano?.() ?? null
     };
+  }
+
+  /** The viewer nobody is looking at, which is where the next one loads. */
+  get _idle() {
+    return this.viewers[1 - this.active];
+  }
+
+  /**
+   * Bring a panorama up behind the current one, then cross-fade.
+   *
+   * Resolves when the swap is done, or immediately if a swap is already in
+   * flight — two transitions racing would leave whichever finished second
+   * showing while `panorama` pointed at the other.
+   */
+  async _swapTo(panoId) {
+    if (!panoId || this._swapping) return false;
+    this._swapping = true;
+
+    const incoming = this._idle;
+    try {
+      /*
+       * Wake it first.
+       *
+       * The idle viewer is created with `visible: false` so it costs nothing
+       * while nobody is looking at it — and a viewer that is not visible does
+       * not render, so fading a pane onto it lands on an empty layer. Measured
+       * as the screen going dark and staying dark, which looked exactly like
+       * the bug this whole change was meant to fix.
+       */
+      incoming.setVisible(true);
+
+      /*
+       * If the idle viewer is already showing this panorama, it was preloaded
+       * and there is nothing to wait for — the swap becomes a cross-fade over
+       * pixels that are already there.
+       */
+      const preloaded = incoming.getPano?.() === panoId;
+      // Match the current view before it becomes visible, or the cross-fade
+      // lands on a different heading than the one being left.
+      incoming.setPov(this.panorama.getPov());
+      incoming.setZoom(this.panorama.getZoom());
+      if (!preloaded) incoming.setPano(panoId);
+
+      if (!preloaded) await new Promise((resolve) => {
+        const listener = incoming.addListener('pano_changed', () => {
+          listener.remove();
+          resolve();
+        });
+        // Tiles keep arriving after the id changes; a short settle buys the
+        // first sharp frame rather than fading onto a blur.
+        setTimeout(resolve, 2500);
+      });
+      if (!preloaded) await new Promise((r) => setTimeout(r, 260));
+
+      const outgoing = this.active;
+      this.active = 1 - this.active;
+      this.panes[this.active].style.opacity = '1';
+      this.panes[outgoing].style.opacity = '0';
+      this.panorama = this.viewers[this.active];
+
+      const p = this.panorama.getPosition?.();
+      if (p) this.position = { lat: p.lat(), lng: p.lng() };
+      this.walkable = (this.panorama.getLinks?.() ?? []).length > 0;
+
+      // Put the one behind back to sleep once the fade has finished, so only
+      // one viewer is ever actually rendering.
+      setTimeout(() => {
+        this.viewers[outgoing].setVisible(false);
+        this._preloadAhead();
+      }, 450);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      this._swapping = false;
+    }
+  }
+
+  /**
+   * Bring the most likely next panorama up in the idle viewer.
+   *
+   * "Most likely" is the exit nearest the way the camera is pointing, which is
+   * where walking goes and where the forward button goes. Exactly one, because
+   * each of these is a billed load that is wasted if the player turns instead.
+   */
+  _preloadAhead() {
+    if (!settings.environment.streetViewPreloadAhead) return;
+    if (!this.ready || this._swapping) return;
+
+    const links = this.panorama.getLinks?.() ?? [];
+    if (!links.length) return;
+
+    const heading = this.heading ?? 0;
+    let best = null;
+    let bestOffset = Infinity;
+    for (const link of links) {
+      if (typeof link?.heading !== 'number' || !link.pano) continue;
+      const offset = Math.abs(((link.heading - heading + 540) % 360) - 180);
+      if (offset < bestOffset) {
+        bestOffset = offset;
+        best = link;
+      }
+    }
+    if (!best || bestOffset > 90) return;
+
+    const idle = this._idle;
+    if (idle.getPano?.() === best.pano) return;
+    // Loaded but left invisible: it renders nothing until a swap wakes it.
+    idle.setPano(best.pano);
   }
 
   setPosition(position) {
