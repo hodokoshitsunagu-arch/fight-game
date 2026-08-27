@@ -372,7 +372,18 @@ export class Enemy {
       : this.baseTintAmount;
 
     const impulseDamping = Math.exp(-settings.enemy.impulseDamping * dt);
-    if (this.position.y > 0 || this.externalVelocity.y > 0) {
+    /*
+     * Grounded mode drops the vertical entirely rather than letting it arc.
+     *
+     * Enemies walk at y = 0 already; knockback is the only thing that lifts
+     * them. Over a photographed street a body hanging in the air has nothing to
+     * explain it — no shadow that agrees, no scenery at that height — so the
+     * push keeps its horizontal shove and loses its lift.
+     */
+    if (settings.enemy.stayGrounded) {
+      this.externalVelocity.y = 0;
+      this.position.y = 0;
+    } else if (this.position.y > 0 || this.externalVelocity.y > 0) {
       this.externalVelocity.y -= 18 * dt;
     }
     this.position.addScaledVector(this.externalVelocity, dt);

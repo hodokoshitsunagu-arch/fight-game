@@ -375,6 +375,15 @@ export const settings = {
   /* Monster horde                                                      */
   /* ------------------------------------------------------------------ */
   enemy: {
+    /*
+     * Never leave the ground.
+     *
+     * Enemies already walk at y = 0; the only thing that lifts them is knockback,
+     * which throws them upward. Over a photographed street a body hanging in the
+     * air has nothing to explain it, so the vertical component is dropped and the
+     * push stays horizontal — the shove still reads, it just stays on the road.
+     */
+    stayGrounded: true,
     enabled: true,
     maxAlive: 100,
     prewarm: 100,
@@ -2096,7 +2105,16 @@ export const settings = {
     firstPerson: true,
     eyeHeight: 1.68,   // metres, roughly a standing adult's eyeline
     lookSpeed: 1.0,
-    pitchLimit: 78,    // degrees either side of level; past that the view inverts
+    /*
+     * Vertical look is off.
+     *
+     * Against a photographed street the horizon is fixed by the panorama, and
+     * every degree of pitch slides the ground plane out of agreement with it —
+     * things standing at y = 0 start to float or sink. Holding the view level
+     * keeps the two grounds locked together, and swiping becomes purely a turn.
+     */
+    lockPitch: true,
+    pitchLimit: 78,    // degrees either side of level, when pitch is unlocked
     handBob: 1.0,      // 0 stills the hands entirely
 
     targetHeight: 1.35,

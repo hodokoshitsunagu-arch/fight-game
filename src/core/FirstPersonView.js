@@ -84,11 +84,23 @@ export class FirstPersonView {
 
       const speed = settings.camera.lookSpeed * 0.0022;
       this.yaw -= dx * speed;
-      this.pitch = MathUtils.clamp(
-        this.pitch - dy * speed,
-        MathUtils.degToRad(-settings.camera.pitchLimit),
-        MathUtils.degToRad(settings.camera.pitchLimit)
-      );
+
+      /*
+       * Vertical drag is ignored while the pitch is locked.
+       *
+       * Not clamped to zero afterwards — ignored, so a diagonal swipe turns
+       * cleanly instead of turning and then snapping back. Against a
+       * photographed street the horizon belongs to the panorama, and pitching
+       * away from it is what makes things standing on the ground look like they
+       * are not.
+       */
+      if (!settings.camera.lockPitch) {
+        this.pitch = MathUtils.clamp(
+          this.pitch - dy * speed,
+          MathUtils.degToRad(-settings.camera.pitchLimit),
+          MathUtils.degToRad(settings.camera.pitchLimit)
+        );
+      }
     };
 
     this._onUp = (event) => {
@@ -137,7 +149,9 @@ export class FirstPersonView {
     const camera = this.camera;
     camera.position.copy(this.position);
     camera.position.y = settings.camera.eyeHeight;
-    camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    // Roll is never written, and pitch is zero while locked: the horizon stays
+    // exactly where the panorama put it.
+    camera.rotation.set(settings.camera.lockPitch ? 0 : this.pitch, this.yaw, 0, 'YXZ');
     camera.updateMatrixWorld(true);
   }
 

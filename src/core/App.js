@@ -483,6 +483,18 @@ export class App {
      * bottom of the frame. Kept large now that it is invisible, because its
      * only remaining job is to be big enough to catch what falls on it.
      */
+    /*
+     * The eyes go where the panorama's camera was.
+     *
+     * Street View projects its sphere from roughly 2.5m above the road, and the
+     * game draws its ground at y = 0. The two grounds coincide only when the
+     * camera stands the same height above y = 0 — at a person's 1.68m the plane
+     * sits 0.8m above the photographed street, and everything standing on it
+     * floats by exactly that much. Matching the capture height is what puts
+     * their feet on the pavement.
+     */
+    settings.camera.eyeHeight = env.streetViewEyeHeight;
+
     env.floorShadowOnly = true;
     env.floorScale = 0.6;
     env.ambientIntensity = 0.45;
