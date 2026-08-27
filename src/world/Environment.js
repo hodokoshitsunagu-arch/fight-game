@@ -386,6 +386,7 @@ export class Environment {
 
     /* ---- backdrop ---- */
     const backdrop = this._backdrop ?? this.equirect;
+    const streetview = env.backgroundMode === 'streetview';
     const panorama = env.backgroundMode === 'panorama' && backdrop;
     // Parallax needs a depth map; without one the dome would just be a more
     // expensive way to draw the same flat sky.
@@ -413,7 +414,13 @@ export class Environment {
     // covers every pixel, so this is only ever seen if it fails to draw.
     // Assigning the same object every frame is a no-op in three; only a real
     // change touches the renderer.
-    this.scene.background = panorama && !parallax ? backdrop : this._bgColor;
+    /*
+     * `null` in Street View mode, so nothing is painted and the canvas clears
+     * transparent onto the viewer behind it. Setting a colour here was the
+     * reason the imagery loaded correctly and still showed as black: the clear
+     * alpha was zero, and then a scene background painted straight over it.
+     */
+    this.scene.background = streetview ? null : (panorama && !parallax ? backdrop : this._bgColor);
     this.scene.backgroundIntensity = panorama && !parallax ? env.backgroundIntensity : 1;
     this.scene.backgroundBlurriness = panorama && !parallax ? env.backgroundBlur : 0;
     if (panorama && !parallax) {

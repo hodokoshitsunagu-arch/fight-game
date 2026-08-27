@@ -411,8 +411,13 @@ export class App {
 
     const ok = await this.streetView.load();
     if (!ok) {
+      // Keep the reason reachable. Disposing the object was destroying the only
+      // evidence of why it failed, which made every failure look the same from
+      // the console.
+      this.streetViewError = this.streetView.error;
       this.streetView.dispose();
       this.streetView = null;
+      console.warn('[streetview] not shown:', this.streetViewError);
       this._showStreetViewNotice(key ? 'failed' : 'no-key');
       return;
     }

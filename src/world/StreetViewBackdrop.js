@@ -45,21 +45,46 @@ function loadMapsApi(key) {
   const existing = document.getElementById(SCRIPT_ID);
   if (existing?._promise) return existing._promise;
 
+  /*
+   * Loaded with `callback=`, not `loading=async`.
+   *
+   * `loading=async` defers the bootstrap past the script's own `onload`, so at
+   * that moment `google.maps` exists but `StreetViewPanorama` does not — and
+   * neither does `importLibrary`, which is what that mode expects you to wait
+   * on. Measured, not assumed: the script returns 200 and the namespace is
+   * there, and the class is still missing. The callback parameter is the one
+   * signal that actually means ready.
+   */
   const promise = new Promise((resolve, reject) => {
+    const callbackName = '__fightGameMapsReady';
+    const timeout = setTimeout(() => reject(new Error('maps-api-timeout')), 20000);
+
+    window[callbackName] = () => {
+      clearTimeout(timeout);
+      delete window[callbackName];
+      if (window.google?.maps?.StreetViewPanorama) resolve(window.google.maps);
+      else reject(new Error('maps-api-incomplete'));
+    };
+
     const script = document.createElement('script');
     script.id = SCRIPT_ID;
     script.async = true;
     script.src =
-      `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async`;
-    script.onload = () =>
-      window.google?.maps?.StreetViewPanorama
-        ? resolve(window.google.maps)
-        : reject(new Error('maps-api-incomplete'));
-    script.onerror = () => reject(new Error('script-blocked'));
+      `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}` +
+      `&v=weekly&callback=${callbackName}`;
+    // A blocked script never reaches the callback; a bad key does, and reports
+    // itself through the API's own console error instead.
+    script.onerror = () => {
+      clearTimeout(timeout);
+      reject(new Error('script-blocked'));
+    };
     document.head.appendChild(script);
-    script._promise = promise;
   });
 
+  // Stamped after construction, not inside the executor: the executor runs
+  // synchronously, while `promise` is still in its temporal dead zone, and
+  // touching it there throws before the script tag has a chance to matter.
+  document.getElementById(SCRIPT_ID)._promise = promise;
   return promise;
 }
 
@@ -82,7 +107,11 @@ export class StreetViewBackdrop {
     // viewer that swallowed drags would fight the orbit controls for them.
     this.element.setAttribute(
       'style',
-      'position:fixed; inset:0; z-index:0; pointer-events:none; background:#0a0d12;'
+      // Explicit width/height rather than `inset:0`: measured at 960x0 with the
+      // shorthand, so the viewer was loading its imagery into an element with no
+      // height and nothing could ever show.
+      'position:fixed; top:0; left:0; width:100vw; height:100vh;' +
+        ' z-index:0; pointer-events:none; background:#0a0d12;'
     );
     document.body.insertBefore(this.element, document.body.firstChild);
 
@@ -98,6 +127,11 @@ export class StreetViewBackdrop {
       this.panorama = new maps.StreetViewPanorama(this.element, {
         position: this.position,
         pov: { heading: 0, pitch: 0 },
+        // Google's own car imagery, not a user-uploaded photosphere. Times
+        // Square has plenty of both, and the nearest pano to a coordinate is
+        // often somebody's phone panorama — lower resolution, arbitrary date,
+        // and a personal copyright line in the attribution.
+        source: maps.StreetViewSource?.OUTDOOR ?? undefined,
         // Every control off: the game camera is the only thing that should move
         // this. The Google logo and Terms link are not controls and stay — they
         // are the attribution the terms require.
