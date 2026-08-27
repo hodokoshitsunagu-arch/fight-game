@@ -137,3 +137,12 @@ dist
 
 # Local VFX capture scratch (dev tooling)
 .captures/
+
+# Editor swap files. A `.env` open in vim leaves `..env.swp` beside it holding
+# the file's contents — including the key — and it is not covered by the `.env`
+# rule above.
+*.swp
+*.swo
+*.swn
+*~
+.DS_Store
