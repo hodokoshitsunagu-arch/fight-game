@@ -37,6 +37,7 @@ import { PostProcessing } from '../postprocessing/PostProcessing.js';
 
 import { VoiceController } from '../voice/VoiceController.js';
 import { DummyField } from '../sandbox/DummyField.js';
+import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
 import { VoiceHUD } from '../ui/VoiceHUD.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { DamageNumbers } from '../ui/DamageNumbers.js';
@@ -394,6 +395,64 @@ export class App {
   }
 
   /**
+   * Put Street View behind the scene, or say clearly why it is not there.
+   *
+   * Failing to a black screen would be the worst outcome: a missing key, a
+   * referer-restricted key and a location with no coverage all look identical
+   * from the outside, and each needs a different fix. So a failure names itself
+   * and the flat stage stays up.
+   */
+  async _startStreetView(key) {
+    const env = settings.environment;
+    this.streetView = new StreetViewBackdrop({
+      key,
+      position: { lat: env.streetViewLat, lng: env.streetViewLng }
+    });
+
+    const ok = await this.streetView.load();
+    if (!ok) {
+      this.streetView.dispose();
+      this.streetView = null;
+      this._showStreetViewNotice(key ? 'failed' : 'no-key');
+      return;
+    }
+
+    env.backgroundMode = 'streetview';
+    env.parallax = false;
+    // Clear to nothing so the viewer behind the canvas is what gets seen.
+    this.renderer.gl.setClearAlpha(0);
+    // The void's fog would paint a grey wall over a street that is genuinely
+    // right there.
+    env.fogEnabled = false;
+    env.floorScale = 0.1;
+    env.ambientIntensity = 0.45;
+    settings.camera.distance = 13;
+    this.rig.setOrbit(1.2, 0.6);
+  }
+
+  /** An on-screen explanation, because a black backdrop explains nothing. */
+  _showStreetViewNotice(reason) {
+    const notice = document.createElement('div');
+    notice.setAttribute(
+      'style',
+      `position:fixed; left:50%; top:18px; transform:translateX(-50%); z-index:60;
+       max-width:min(560px, 92vw); padding:12px 16px; border-radius:10px;
+       border:1px solid rgba(255,255,255,.16); background:rgba(12,16,24,.92);
+       backdrop-filter:blur(10px); color:#dfe8f5; font:13px/1.6 system-ui,sans-serif;
+       text-align:center;`
+    );
+    notice.innerHTML = reason === 'no-key'
+      ? `<b>Street View needs a Google Maps API key.</b><br>
+         Add <code>&amp;gmapskey=YOUR_KEY</code> to the address, with the
+         Maps JavaScript API enabled for it.`
+      : `<b>Street View could not load.</b><br>
+         Usually the key is restricted to another referer, the Maps JavaScript
+         API is not enabled on it, or billing is off.`;
+    document.body.appendChild(notice);
+    setTimeout(() => { notice.style.transition = 'opacity .6s'; notice.style.opacity = '0'; }, 15000);
+  }
+
+  /**
    * Re-stage the scene for a grounded panorama backdrop.
    *
    * The stage was tuned against a flat void: a 400-metre floor, fog reaching
@@ -681,6 +740,33 @@ export class App {
 
     // A dedicated backdrop is optional and must never block the boot: a missing
     // or malformed panorama should cost you the sky, not the app.
+    /*
+     * `?streetview` puts Google Street View behind the scene, and takes every
+     * other backdrop off: the generated panoramas and the flat void are both
+     * replaced, not layered under it.
+     *
+     * The key is not committed. It arrives as `?gmapskey=...` or, for a build
+     * that owns one, as `VITE_GOOGLE_MAPS_KEY` in `.env`.
+     */
+    const params = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+
+    if (params.has('streetview')) {
+      const at = params.get('streetview');
+      if (at && at.includes(',')) {
+        const [lat, lng] = at.split(',').map(Number);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          settings.environment.streetViewLat = lat;
+          settings.environment.streetViewLng = lng;
+        }
+      }
+      this.loading.setProgress(0.15, 'Connecting Street View…');
+      await this._startStreetView(
+        params.get('gmapskey') || import.meta.env?.VITE_GOOGLE_MAPS_KEY || ''
+      );
+    }
+
     // `?panorama=./hdri/whatever.jpg` overrides the configured backdrop, so a
     // freshly generated panorama can be tried by dropping it in `public/` and
     // editing the address bar — no rebuild, no code change.
@@ -846,6 +932,10 @@ export class App {
     this.ground.update(this.elapsed);
     this.dust.update(this.elapsed, this.character.position);
 
+    // The backdrop is a DOM layer, so it is turned rather than rendered: the
+    // viewer is told where the camera looks and draws its own pixels.
+    this.streetView?.sync(this.camera);
+
     if (this.sandbox) {
       this.dummies.update(raw);
       // Real time, deliberately: the window for a trailing modifier is a
@@ -943,6 +1033,7 @@ export class App {
 
   dispose() {
     this.stop();
+    this.streetView?.dispose();
     if (this.sandbox) {
       window.removeEventListener('keydown', this._onVoiceKeyDown);
       window.removeEventListener('keyup', this._onVoiceKeyUp);

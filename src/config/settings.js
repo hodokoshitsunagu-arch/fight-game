@@ -2117,7 +2117,17 @@ export const settings = {
      * behind it — which against a panorama backdrop is the whole city.
      */
     floorScale: 1.0,
-    backgroundMode: 'flat', // 'flat' | 'panorama'
+    backgroundMode: 'flat', // 'flat' | 'panorama' | 'streetview'
+    /*
+     * Street View backdrop.
+     *
+     * Rendered by Google's own viewer in a DOM layer behind a transparent
+     * canvas — the imagery is never fetched or stored by us, which is what the
+     * Maps Platform terms require. Needs a Maps JavaScript API key and bills
+     * per load, so it is opt-in.
+     */
+    streetViewLat: 40.758,   // Times Square
+    streetViewLng: -73.9855,
     /*
      * Where the backdrop comes from.
      *

@@ -18,7 +18,10 @@ export class Renderer {
       antialias: true,
       powerPreference: 'high-performance',
       stencil: false,
-      alpha: false
+      // Transparent so a DOM backdrop (Street View) can show through. The
+      // context's alpha cannot be changed after creation, so it is always on;
+      // opaque modes just clear with alpha 1.
+      alpha: true
     });
 
     this.gl.setPixelRatio(this.targetPixelRatio());
