@@ -1,4 +1,5 @@
 import {
+  ShadowMaterial,
   Mesh,
   PlaneGeometry,
   MeshStandardMaterial,
@@ -190,7 +191,39 @@ export class Ground {
    * repeat is touched — that feeds the texture's UV matrix (auto-updated each
    * render), so there is no image re-upload and this is safe to call per frame.
    */
+  /**
+   * Draw only the shadows the floor catches, and nothing else.
+   *
+   * With a Street View backdrop the floor is the one thing standing between the
+   * scene and the street — a 40-metre opaque plane across the bottom of the
+   * frame. Hiding it outright would put every character and every ground effect
+   * in mid-air with nothing under them.
+   *
+   * `ShadowMaterial` is the compositing answer, and the same one AR uses:
+   * transparent everywhere except where something casts a shadow onto it. The
+   * street shows through, and the figures standing on it still look like they
+   * are standing on it.
+   *
+   * The real material is kept rather than replaced, so this is reversible from
+   * the editor without rebuilding anything.
+   */
+  setShadowOnly(enabled, opacity = 0.42) {
+    if (enabled) {
+      this._shadowMaterial ??= new ShadowMaterial({ transparent: true, opacity });
+      this._shadowMaterial.opacity = opacity;
+      if (this.mesh.material !== this._shadowMaterial) {
+        this._solidMaterial = this.mesh.material;
+        this.mesh.material = this._shadowMaterial;
+      }
+    } else if (this._solidMaterial) {
+      this.mesh.material = this._solidMaterial;
+      this._solidMaterial = null;
+    }
+  }
+
   _applyTiling() {
+    const env = settings.environment;
+    this.setShadowOnly(env.floorShadowOnly, env.floorShadowOpacity);
     if (!this.textures) return;
 
     /*

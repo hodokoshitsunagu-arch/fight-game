@@ -21,7 +21,17 @@ export class Renderer {
       // Transparent so a DOM backdrop (Street View) can show through. The
       // context's alpha cannot be changed after creation, so it is always on;
       // opaque modes just clear with alpha 1.
-      alpha: true
+      alpha: true,
+      /*
+       * Not premultiplied.
+       *
+       * The last pass writes straight colour and a separate alpha, which is
+       * exactly what non-premultiplied means. Left at the default the browser
+       * would read that colour as already multiplied, and every pixel with
+       * partial coverage composites far too bright — figures over a backdrop
+       * come out as white silhouettes.
+       */
+      premultipliedAlpha: false
     });
 
     this.gl.setPixelRatio(this.targetPixelRatio());

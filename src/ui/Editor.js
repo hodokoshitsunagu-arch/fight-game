@@ -1624,6 +1624,8 @@ export class Editor {
     const backdrop = folder.addFolder('Backdrop');
     backdrop.add(e, 'backgroundMode', ['flat', 'panorama']).name('mode');
     R(backdrop, e, 'floorScale', 0.1, 1, 0.01, 'floor size (trim to reveal)');
+    backdrop.add(e, 'floorShadowOnly').name('floor: shadows only');
+    R(backdrop, e, 'floorShadowOpacity', 0, 1, 0.01, 'shadow strength');
     R(backdrop, e, 'backgroundIntensity', 0, 3, 0.01, 'exposure');
     R(backdrop, e, 'backgroundBlur', 0, 1, 0.01, 'blur');
     R(backdrop, e, 'backgroundRotation', 0, 360, 1, 'rotation (deg)');

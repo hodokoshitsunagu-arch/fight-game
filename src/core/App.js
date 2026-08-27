@@ -429,7 +429,14 @@ export class App {
     // The void's fog would paint a grey wall over a street that is genuinely
     // right there.
     env.fogEnabled = false;
-    env.floorScale = 0.1;
+    /*
+     * Shadows only. The backdrop is genuinely behind the scene, so an opaque
+     * floor is the one thing that can block it — and it blocked the whole
+     * bottom of the frame. Kept large now that it is invisible, because its
+     * only remaining job is to be big enough to catch what falls on it.
+     */
+    env.floorShadowOnly = true;
+    env.floorScale = 0.6;
     env.ambientIntensity = 0.45;
     settings.camera.distance = 13;
     this.rig.setOrbit(1.2, 0.6);

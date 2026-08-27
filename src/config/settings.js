@@ -2117,6 +2117,15 @@ export const settings = {
      * behind it — which against a panorama backdrop is the whole city.
      */
     floorScale: 1.0,
+    /*
+     * Draw the floor as shadows only — transparent apart from what falls on it.
+     *
+     * For a backdrop that is genuinely behind the scene (Street View), an
+     * opaque floor is the one thing blocking it. This keeps the figures
+     * grounded without keeping the plane.
+     */
+    floorShadowOnly: false,
+    floorShadowOpacity: 0.42,
     backgroundMode: 'flat', // 'flat' | 'panorama' | 'streetview'
     /*
      * Street View backdrop.
