@@ -2,6 +2,9 @@
 
 在真实世界的十个地标里施放法术,顶部下拉切换场景。
 
+> **状态:已实现。** 见 `src/config/scenes.js`、`src/ui/SceneSelector.js`。
+> 打开 `?streetview` 即可,或直接指定场景:`?streetview=machu-picchu`。
+
 ## 为什么
 
 街景背景已经跑通:官方影像铺满全帧、地面与街面对齐、WASD 可以沿街行走。但目前只有一个写死的起点(纽约时代广场),换地方要改 URL 参数。

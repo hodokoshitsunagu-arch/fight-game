@@ -1111,10 +1111,255 @@ body {
   .hud__abilities {
     width: 128px;
     right: 8px;
+    /* Below the scene selector, which owns the top-centre row. A 280px
+       selector centred on a 390px screen reaches 335px, and the strip starts
+       at 254 — they collided, so the strip takes the next row down. */
+    top: 58px;
+    max-height: calc(100vh - 190px);
+  }
+
+  .hud__abilities-body {
+    max-height: min(calc(100vh - 260px), 400px);
   }
 
   .voice-hud__mic {
     width: 70px;
     height: 70px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Scene selector — top centre, the only edge the other UI leaves free
+ * ------------------------------------------------------------------ */
+
+.scene-selector {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  width: min(300px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  pointer-events: auto;
+  /* Out of the way at rest, legible the moment it is being used — the same
+     bargain the spell strip makes. */
+  opacity: 0.6;
+  transition: opacity 0.18s ease;
+}
+
+.scene-selector.is-open,
+.scene-selector.is-busy,
+.scene-selector:active {
+  /* Fully opaque while open. At 0.95 the container's alpha multiplied the
+     list's own, and the spell strip showed straight through ten rows of text. */
+  opacity: 1;
+}
+
+.scene-selector__current {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px; /* matches the spell strip's header, so the two read as a pair */
+  padding: 0 12px;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--ui-text);
+  font: 600 13px/1 var(--ui-font);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.scene-selector__current:active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.scene-selector__flag {
+  font-size: 17px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.scene-selector__name {
+  flex: 1 1 auto;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-selector__chevron {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 0.22s ease;
+  opacity: 0.75;
+}
+
+.scene-selector.is-open .scene-selector__chevron {
+  transform: rotate(-135deg) translate(-1px, -1px);
+}
+
+/* Loading a remote landmark's tiles takes seconds; without this the UI just
+   sits there and reads as broken. */
+.scene-selector__progress {
+  height: 2px;
+  margin: 3px 2px 0;
+  border-radius: 2px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.scene-selector.is-busy .scene-selector__progress {
+  opacity: 1;
+}
+
+.scene-selector__progress i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ui-accent, #8fb7ff);
+  animation: scene-progress 1.1s ease-in-out infinite;
+}
+
+@keyframes scene-progress {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(260%); }
+}
+
+.scene-selector__list {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border);
+  background: rgba(8, 11, 16, 0.97);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--ui-shadow);
+  /* Ten rows do not fit a phone, so the list scrolls rather than running off
+     the bottom of the screen. */
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* A flex item defaults to min-height:auto, which would override this. */
+  min-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.22s ease, visibility 0.22s;
+}
+
+.scene-selector.is-open .scene-selector__list {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.scene-selector__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* 48px: a thumb needs 44 as a floor, and these names need the extra. */
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ui-text);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scene-selector__item:active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.scene-selector__item.is-current {
+  border-color: var(--ui-accent, #8fb7ff);
+  background: rgba(143, 183, 255, 0.12);
+}
+
+.scene-selector__item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scene-selector__item-text b {
+  font: 600 13px/1.2 var(--ui-font);
+}
+
+.scene-selector__item-text small {
+  font-size: 10px;
+  color: var(--ui-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The scene's own line, once the place is actually on screen. */
+.scene-blurb {
+  position: fixed;
+  left: 50%;
+  bottom: 24%;
+  transform: translateX(-50%) translateY(6px);
+  z-index: 44;
+  max-width: min(460px, 88vw);
+  padding: 11px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-border);
+  background: rgba(10, 14, 20, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #e6edf8;
+  font: 13px/1.7 var(--ui-font);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.scene-blurb.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* The toast lives top-centre too. Push it below the selector rather than
+   letting the two stack — the spell strip needed the same avoidance
+   horizontally. */
+.hud__toast {
+  top: 116px;
+}
+
+@media (max-width: 760px) {
+  .scene-selector {
+    width: min(280px, calc(100vw - 20px));
+  }
+
+  .hud__toast {
+    top: 104px;
+  }
+
+  .scene-blurb {
+    bottom: 27%;
+    font-size: 12px;
   }
 }

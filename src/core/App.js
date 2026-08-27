@@ -38,6 +38,8 @@ import { PostProcessing } from '../postprocessing/PostProcessing.js';
 import { VoiceController } from '../voice/VoiceController.js';
 import { DummyField } from '../sandbox/DummyField.js';
 import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
+import { SceneSelector } from '../ui/SceneSelector.js';
+import { SCENES, DEFAULT_SCENE, findScene } from '../config/scenes.js';
 import { VoiceHUD } from '../ui/VoiceHUD.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { DamageNumbers } from '../ui/DamageNumbers.js';
@@ -449,6 +451,40 @@ export class App {
     if (env.streetViewHideRelicBase) this.relic.base.visible = false;
 
     this._alignCameraToStreet();
+    this._buildSceneSelector();
+  }
+
+  /**
+   * The scene list, and what happens when one is chosen.
+   *
+   * Switching is not a camera move: the world changes, so everything that
+   * belonged to the old one has to go. A spell mid-flight over Times Square has
+   * no business arriving in Athens, and the dummies were standing on a street
+   * that no longer exists. The banked walk goes too — it was distance down a
+   * different road.
+   */
+  _buildSceneSelector() {
+    this.sceneSelector = new SceneSelector(document.body);
+    this.sceneSelector.setCurrent(this.scene_ ?? DEFAULT_SCENE);
+
+    this.sceneSelector.onSelect = async (scene) => {
+      const moved = await this.streetView.moveTo(scene.lat, scene.lng, 120);
+      if (!moved) return false;
+
+      this.scene_ = scene;
+      settings.environment.streetViewLat = scene.lat;
+      settings.environment.streetViewLng = scene.lng;
+
+      this.clearEffects();
+      this.combat.reset();
+      this.damageNumbers.clear();
+      this.character.position.set(0, this.character.position.y, 0);
+      this.character.root.position.set(0, this.character.root.position.y, 0);
+      this.rig.setAnchor(0, 0, 0);
+      this.dummies?.start();
+      this._alignCameraToStreet();
+      return true;
+    };
   }
 
   /**
@@ -864,12 +900,22 @@ export class App {
 
     if (params.has('streetview')) {
       const at = params.get('streetview');
-      if (at && at.includes(',')) {
+      // Accepts a scene id (`?streetview=taj-mahal`) or a raw coordinate.
+      const named = at ? findScene(at) : null;
+      if (named) {
+        this.scene_ = named;
+        settings.environment.streetViewLat = named.lat;
+        settings.environment.streetViewLng = named.lng;
+      } else if (at && at.includes(',')) {
         const [lat, lng] = at.split(',').map(Number);
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
           settings.environment.streetViewLat = lat;
           settings.environment.streetViewLng = lng;
         }
+      } else {
+        this.scene_ = DEFAULT_SCENE;
+        settings.environment.streetViewLat = DEFAULT_SCENE.lat;
+        settings.environment.streetViewLng = DEFAULT_SCENE.lng;
       }
       this.loading.setProgress(0.15, 'Connecting Street View…');
       await this._startStreetView(
@@ -1153,6 +1199,7 @@ export class App {
 
   dispose() {
     this.stop();
+    this.sceneSelector?.dispose();
     this.streetView?.dispose();
     if (this.sandbox) {
       window.removeEventListener('keydown', this._onVoiceKeyDown);
