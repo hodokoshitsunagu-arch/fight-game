@@ -1,0 +1,19 @@
+# Static hosting for the built site.
+app = "voice-spellcasting"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # A demo nobody is looking at should not bill for a machine. It sleeps, and
+  # the first request after a sleep pays a second or two of wake-up.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

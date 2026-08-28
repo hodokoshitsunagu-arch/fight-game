@@ -103,6 +103,10 @@ export class Enemy {
     this.provokedRemaining = 0;
     this.archetype = archetype;
     this.traits = Array.isArray(descriptor.traits) ? descriptor.traits.slice(0, 2) : [];
+    /** 'chase' | 'wanderer' | 'sentry' — how it decides where to go. */
+    this.behaviour = descriptor.behaviour ?? 'chase';
+    this.provoked = false;
+    this.wanderPhase = Math.random() * Math.PI * 2;
     this.maxHP = Math.max(1, Math.round(type.hp * hpScale));
     this.currentHP = this.maxHP;
     this.moveSpeed = c.moveSpeed * type.speedMultiplier * (0.9 + Math.random() * 0.2);
@@ -176,6 +180,8 @@ export class Enemy {
   }
 
   applyDamage(hit) {
+    // A sentry that has been hit stops being one.
+    this.provoked = true;
     if (this.isDead || !this.root.visible) return 0;
     if (this.shieldCharges > 0 && !hit.ignoreShield) {
       this.shieldCharges--;
@@ -298,6 +304,20 @@ export class Enemy {
       return;
     }
 
+    /*
+     * A sentry holds its ground until it is hit.
+     *
+     * The point of it is somewhere to practise: a target that stays where it is
+     * put, at the distance it was put, so a spell can be aimed at leisure. It
+     * stops being a sentry the moment it takes damage, which is what keeps it
+     * from being scenery.
+     */
+    if (this.behaviour === 'sentry' && !this.provoked) {
+      this.aiVelocity.set(0, 0, 0);
+      this.setFacing(_away.x, _away.z);
+      return;
+    }
+
     if (distance <= settings.enemy.attackRange + targetRadius && this.hitTimer <= 0 && this.statusTimer <= 0) {
       this.enterAttack();
       this.setFacing(_away.x, _away.z);
@@ -315,6 +335,25 @@ export class Enemy {
     ) slow *= settings.enemyTraits.berserk.speedMultiplier;
 
     this.aiVelocity.copy(_away).multiplyScalar(this.moveSpeed * slow);
+
+    /*
+     * A wanderer circles instead of closing.
+     *
+     * Rotating its heading away from the target converts almost all of its
+     * approach into orbit — it keeps the scene moving without ever becoming
+     * something you have to deal with. That is the whole job: filler that reads
+     * as alive and costs no attention.
+     */
+    if (this.behaviour === 'wanderer') {
+      const swing = settings.enemyBehaviour.wanderSwing;
+      // Per-enemy phase so a group of them does not orbit in formation.
+      const angle = Math.sin(this.wanderPhase + performance.now() * 0.0004) * swing;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const vx = this.aiVelocity.x * cos - this.aiVelocity.z * sin;
+      const vz = this.aiVelocity.x * sin + this.aiVelocity.z * cos;
+      this.aiVelocity.set(vx, 0, vz).multiplyScalar(settings.enemyBehaviour.wanderSpeed);
+    }
     const separationRadius = settings.enemy.separationRadius;
     const r2 = separationRadius * separationRadius;
     for (const other of neighbours) {

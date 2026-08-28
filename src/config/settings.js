@@ -321,6 +321,68 @@ export const settings = {
     }
   },
 
+  /*
+   * Behaviours, as opposed to statistics.
+   *
+   * The four archetypes already differ in health and speed; what they all do is
+   * walk straight at you. These two change the decision rather than the number,
+   * which is what a low-pressure level actually needs — something to look at,
+   * and something to practise on.
+   */
+  /*
+   * Encounter pacing.
+   *
+   * The dial that matters most is `restSeconds`. Maintaining a population means
+   * the field is never clear and the pressure never stops, however weak each
+   * enemy is; a gap between batches is what makes the same fight feel unhurried,
+   * because you can see the end of the thing you are in.
+   */
+  encounter: {
+    batchSize: 5,
+    restSeconds: 6,      // the pause between batches — the low-pressure dial
+    openingDelay: 3,     // nothing lands the instant the scene loads
+    arrivalStagger: 0.7, // five at once is a wall; five over three seconds is a group
+
+    /* --- where they come from --- */
+    minDistance: 34,
+    maxDistance: 70,
+    spread: 0.9,         // radians either side of the view
+    behindEvery: 4,      // one in four from behind, so it is not a shooting gallery
+
+    /* --- how many at once --- *
+     * Split deliberately: something behind you cannot be aimed at or avoided,
+     * so it should not count against the same budget as something you can see.
+     */
+    viewArc: 1.6,        // radians counted as "in front"
+    maxInView: 3,
+    maxOutOfView: 2,
+
+    /*
+     * Who turns up, as a repeating list.
+     *
+     * This is the encounter design. A level teaches one thing at a time, so the
+     * list is the thing to edit — nothing in `DummyField` needs to change to
+     * build a different fight. `wanderer` circles and barely threatens;
+     * `sentry` stands still until hit, which makes it something to practise on.
+     */
+    roster: [
+      { archetype: 'normal', behaviour: 'chase' },
+      { archetype: 'normal', behaviour: 'wanderer' },
+      { archetype: 'runner', behaviour: 'chase' },
+      { archetype: 'normal', behaviour: 'sentry' },
+      { archetype: 'tank', behaviour: 'chase' }
+    ]
+  },
+
+  enemyBehaviour: {
+    // Radians the wanderer's heading is swung off the direct line. Near a
+    // quarter turn it circles; at zero it is an ordinary chaser.
+    wanderSwing: 1.15,
+    wanderSpeed: 0.55,
+    // How long a ring sits on the ground before something walks out of it.
+    telegraphSeconds: 1.5,
+  },
+
   enemyTraits: {
     berserk: { speedMultiplier: 1.5, threshold: 0.3 },
     heavy: { knockbackTaken: 0.2 },

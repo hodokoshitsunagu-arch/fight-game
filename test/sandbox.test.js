@@ -32,87 +32,143 @@ function makeEnemies() {
   return enemies;
 }
 
-test('start fills the ring and takes the wave spawner out of the loop', () => {
+/** Runs the field forward in small steps, as a frame loop would. */
+function run(field, seconds, step = 0.1) {
+  for (let t = 0; t < seconds; t += step) field.update(step);
+}
+
+test('nothing arrives the instant the scene loads', () => {
   const enemies = makeEnemies();
-  const field = new DummyField(enemies, { count: 6 });
+  const field = new DummyField(enemies);
   field.start();
-  assert.equal(enemies.aliveCount, 6);
-  assert.equal(enemies.stopped, 1, 'wave spawning stopped');
+  assert.equal(enemies.aliveCount, 0, 'the opening delay is respected');
+
+  run(field, settings.encounter.openingDelay - 0.5);
+  assert.equal(enemies.aliveCount, 0, 'still nothing');
 });
 
-test('dummies are not placed in a straight line', () => {
+test('a batch arrives staggered, not all at once', () => {
   const enemies = makeEnemies();
-  new DummyField(enemies, { count: 8, radius: 12 }).start();
-  const angles = enemies.active.map((e) => Math.atan2(e.position.z, e.position.x));
-  assert.equal(new Set(angles.map((a) => a.toFixed(3))).size, 8, 'every dummy has its own bearing');
-  const radii = enemies.active.map((e) => e.position.length());
-  assert.ok(Math.max(...radii) - Math.min(...radii) > 1, 'and they sit at varied distances');
-});
-
-test('a killed dummy is replaced, after a beat', () => {
-  const enemies = makeEnemies();
-  const field = new DummyField(enemies, { count: 4, respawnDelay: 1.5 });
-  field.start();
-
-  enemies.active[0].isDead = true;
-  enemies.active.splice(0, 1);
-  assert.equal(enemies.aliveCount, 3);
-
-  field.update(0.1);
-  assert.equal(enemies.aliveCount, 3, 'not instantly — the kill stays legible');
-
-  field.update(2.0);
-  assert.equal(enemies.aliveCount, 4, 'then topped back up');
-});
-
-test('a full ring never over-spawns', () => {
-  const enemies = makeEnemies();
-  const field = new DummyField(enemies, { count: 5 });
-  field.start();
-  for (let i = 0; i < 100; i++) field.update(0.5);
-  assert.equal(enemies.aliveCount, 5);
-});
-
-test('stop clears the arena', () => {
-  const enemies = makeEnemies();
-  const field = new DummyField(enemies, { count: 5 });
-  field.start();
-  field.stop();
-  assert.equal(enemies.aliveCount, 0);
-  field.update(10);
-  assert.equal(enemies.aliveCount, 0, 'and stays cleared');
-});
-
-test('dummies start beyond every ability\'s reach, and close in', () => {
-  const enemies = makeEnemies();
-  new DummyField(enemies, { count: 8 }).start();
-
-  // They arrive from a distance now rather than standing in a ring. Frost Lance
-  // has the shortest reach of the line casts; if they started inside it there
-  // would be nothing to watch them do.
-  const distances = enemies.active.map((e) => Math.hypot(e.position.x, e.position.z));
-  const nearest = Math.min(...distances);
-  assert.ok(nearest > settings.ice.range,
-    `nearest dummy at ${nearest.toFixed(1)}m is beyond Frost Lance's ${settings.ice.range}m`);
-
-  // And spread over a range, not all at one radius — a wall arriving together
-  // is a wall, not a horde.
-  assert.ok(Math.max(...distances) - nearest > 10, 'they are spread in depth');
-});
-
-test('dummies arrive from a spread of bearings, biased by where you look', () => {
-  const enemies = makeEnemies();
-  const field = new DummyField(enemies, { count: 8 });
+  const field = new DummyField(enemies);
   field.getFacing = () => 0;
   field.start();
 
-  const bearings = enemies.active.map((e) => Math.atan2(e.position.x, e.position.z));
-  assert.equal(new Set(bearings.map((b) => b.toFixed(3))).size, 8, 'no two share a bearing');
+  run(field, settings.encounter.openingDelay + 0.2);
+  const firstWave = enemies.aliveCount;
+  assert.ok(firstWave >= 1, 'the batch has started');
+  assert.ok(firstWave < settings.encounter.batchSize,
+    `${firstWave} of ${settings.encounter.batchSize} so far — arrivals are spread out`);
 
-  // A quarter come from behind on purpose: a horde that only ever appears in
-  // front is a shooting gallery.
-  const behind = bearings.filter((b) => Math.abs(b) > Math.PI / 2).length;
-  assert.ok(behind >= 1, `${behind} of 8 approach from behind`);
+  run(field, settings.encounter.batchSize * settings.encounter.arrivalStagger + 3);
+  assert.ok(enemies.aliveCount > firstWave, 'and the rest follow');
+});
+
+test('clearing a batch buys a gap before the next one', () => {
+  const enemies = makeEnemies();
+  const field = new DummyField(enemies);
+  field.getFacing = () => 0;
+  field.start();
+  run(field, settings.encounter.openingDelay + 6);
+  assert.ok(enemies.aliveCount > 0, 'a batch is out');
+
+  // Clear the field, as a player would.
+  enemies.active.length = 0;
+  field.update(0.1);
+  assert.equal(field.phase, 'resting', 'an empty field starts the rest');
+
+  run(field, settings.encounter.restSeconds - 1);
+  assert.equal(enemies.aliveCount, 0, 'the gap is real — nothing arrives during it');
+
+  run(field, 2.5);
+  assert.ok(enemies.aliveCount > 0, 'and then the next batch starts');
+});
+
+test('no more than the cap stand in front of the player', () => {
+  const enemies = makeEnemies();
+  const field = new DummyField(enemies);
+  field.getFacing = () => 0;
+  field.start();
+  run(field, 40);
+
+  const halfArc = settings.encounter.viewArc / 2;
+  const inView = enemies.active.filter((e) => {
+    const bearing = Math.atan2(e.position.x, e.position.z);
+    return Math.abs(((bearing + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= halfArc;
+  }).length;
+
+  assert.ok(inView <= settings.encounter.maxInView,
+    `${inView} in view against a cap of ${settings.encounter.maxInView}`);
+});
+
+test('arrivals are spread in bearing and depth, some from behind', () => {
+  const enemies = makeEnemies();
+  const field = new DummyField(enemies);
+  field.getFacing = () => 0;
+  field.start();
+  run(field, 40);
+
+  const bearings = enemies.active.map((e) => Math.atan2(e.position.x, e.position.z));
+  assert.equal(new Set(bearings.map((b) => b.toFixed(3))).size, bearings.length,
+    'no two share a bearing');
+
+  const distances = enemies.active.map((e) => Math.hypot(e.position.x, e.position.z));
+  assert.ok(Math.min(...distances) >= settings.encounter.minDistance - 1,
+    'all start beyond the near bound');
+  assert.ok(Math.min(...distances) > settings.ice.range,
+    'and beyond Frost Lance, so there is something to watch them do');
+});
+
+test('the roster decides who turns up, and it is not all one thing', () => {
+  const enemies = makeEnemies();
+  const field = new DummyField(enemies);
+  field.getFacing = () => 0;
+  field.start();
+  // Several batches, so the repeating roster gets past its first entries.
+  for (let i = 0; i < 6; i++) {
+    run(field, 20);
+    enemies.active.length = 0;
+    run(field, settings.encounter.restSeconds + 1);
+  }
+
+  const seen = field.config.roster;
+  assert.ok(seen.some((r) => r.behaviour === 'wanderer'), 'something that circles');
+  assert.ok(seen.some((r) => r.behaviour === 'sentry'), 'something that waits to be hit');
+  assert.ok(new Set(seen.map((r) => r.archetype)).size > 1, 'more than one archetype');
+});
+
+test('the telegraph marks the ground before anything uses it', () => {
+  const marks = [];
+  const telegraph = {
+    mark: (x, z) => { marks.push({ x, z }); return 1.5; },
+    update: () => {},
+    clear: () => {}
+  };
+  const enemies = makeEnemies();
+  const field = new DummyField(enemies, { telegraph });
+  field.getFacing = () => 0;
+  field.start();
+
+  run(field, settings.encounter.openingDelay + 0.2);
+  assert.equal(marks.length, settings.encounter.batchSize, 'every arrival is announced');
+  // The lead the telegraph asks for delays the spawn, or the warning would
+  // arrive with the thing it was warning about.
+  assert.equal(enemies.aliveCount, 0, 'and nothing has arrived yet');
+
+  run(field, 2);
+  assert.ok(enemies.aliveCount > 0, 'then they come out of the marked spots');
+});
+
+test('stop clears the field and the pending arrivals', () => {
+  const enemies = makeEnemies();
+  const field = new DummyField(enemies);
+  field.getFacing = () => 0;
+  field.start();
+  run(field, settings.encounter.openingDelay + 1);
+  field.stop();
+  assert.equal(enemies.aliveCount, 0);
+  assert.equal(field.pending.length, 0);
+  run(field, 20);
+  assert.equal(enemies.aliveCount, 0, 'and stays stopped');
 });
 
 test('yaw matches the AimController convention', () => {

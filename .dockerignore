@@ -1,0 +1,11 @@
+node_modules
+.git
+.env
+.env.*
+!.env.example
+public
+src
+test
+self-created
+docs
+*.md

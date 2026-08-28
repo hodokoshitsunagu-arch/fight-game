@@ -37,6 +37,7 @@ import { PostProcessing } from '../postprocessing/PostProcessing.js';
 
 import { VoiceController } from '../voice/VoiceController.js';
 import { DummyField } from '../sandbox/DummyField.js';
+import { SpawnTelegraph } from '../sandbox/SpawnTelegraph.js';
 import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
 import { SceneSelector } from '../ui/SceneSelector.js';
 import { MiniMap } from '../ui/MiniMap.js';
@@ -220,7 +221,8 @@ export class App {
     /* ---- sandbox: dummies + voice ---- */
     if (this.sandbox) {
       this.gameUI.setSandbox(true);
-      this.dummies = new DummyField(this.enemies);
+      this.spawnTelegraph = new SpawnTelegraph(this.scene);
+      this.dummies = new DummyField(this.enemies, { telegraph: this.spawnTelegraph });
       this.mana = new Mana();
       this.statusBar = new StatusBar(document.body);
 
@@ -1328,6 +1330,7 @@ export class App {
 
   dispose() {
     this.stop();
+    this.spawnTelegraph?.dispose();
     this.hands?.dispose();
     this.firstPerson?.dispose();
     this.statusBar?.dispose();
