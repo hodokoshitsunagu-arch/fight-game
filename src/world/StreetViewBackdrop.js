@@ -371,6 +371,47 @@ export class StreetViewBackdrop {
   }
 
   /**
+   * Step to the nearest exit, whatever direction it is in.
+   *
+   * `step()` refuses a link more than a quarter turn off, which is right for a
+   * player pressing a direction: walking sideways into another street because
+   * nothing better was on offer is worse than not moving. It is wrong for the
+   * campaign, where the alternative to moving is being stuck on a node forever.
+   *
+   * So this is the same search with the tolerance removed. It only fails when
+   * the panorama genuinely has no exits.
+   *
+   * @param {number} heading degrees clockwise from north to prefer
+   * @returns {boolean} whether a step was started
+   */
+  stepNearest(heading) {
+    if (!this.ready || !this.panorama || this._stepping) return false;
+
+    const links = this.panorama.getLinks?.() ?? [];
+    const current = this.panorama.getPano?.() ?? null;
+
+    let best = null;
+    let bestOffset = Infinity;
+    for (const link of links) {
+      if (typeof link?.heading !== 'number' || !link.pano) continue;
+      // A link pointing at the panorama already showing would report success
+      // and change nothing, which reads exactly like the bug it causes.
+      if (link.pano === current) continue;
+      const offset = Math.abs(((link.heading - heading + 540) % 360) - 180);
+      if (offset < bestOffset) {
+        bestOffset = offset;
+        best = link;
+      }
+    }
+
+    if (!best) return false;
+
+    this._stepping = true;
+    this._swapTo(best.pano).finally(() => { this._stepping = false; });
+    return true;
+  }
+
+  /**
    * Step relative to where the camera is facing.
    *
    * "Forward" has no meaning to Street View, which only knows compass bearings,

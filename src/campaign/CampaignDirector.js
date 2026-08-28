@@ -53,7 +53,16 @@ export class CampaignDirector {
   } = {}) {
     this.dummies = dummies;
     this.shard = shard;
-    this.streetView = streetView;
+    /*
+     * Resolved on use, not captured.
+     *
+     * The backdrop is created by an async step during `load()`, while the
+     * director is built with the rest of the sandbox in the constructor — so
+     * holding a reference taken at construction meant holding `null` forever,
+     * and every step silently did nothing while the app's own backdrop was
+     * perfectly alive. A getter makes the ordering impossible to get wrong.
+     */
+    this._streetView = streetView;
     this.scenes = scenes;
     this.hud = hud;
     this.getFacing = getFacing;
@@ -74,6 +83,15 @@ export class CampaignDirector {
 
     if (this.dummies) this.dummies.onCleared = () => this._onCleared();
     if (this.shard) this.shard.onCollect = () => this._onCollected();
+  }
+
+  /** The backdrop, whenever it came into existence. */
+  get streetView() {
+    return typeof this._streetView === 'function' ? this._streetView() : this._streetView;
+  }
+
+  set streetView(value) {
+    this._streetView = value;
   }
 
   get node() {
@@ -194,20 +212,21 @@ export class CampaignDirector {
    * Walk to the next panorama along this street.
    *
    * Forward first, because that is where the player is looking and a step they
-   * did not ask for should at least go the way they were facing. `step()`
-   * refuses a link more than a quarter turn off, so the fallbacks walk the
-   * directions the panorama actually offers rather than guessing.
+   * did not ask for should at least go the way they were facing.
+   *
+   * When forward is refused, fall through to the nearest exit in any direction.
+   * The first attempt at this stacked `availableDirections()` (a 55-degree
+   * tolerance) on top of `step()` (90 degrees) on top of `stepRelative`, and
+   * measured on Times Square it reported three directions available and then
+   * took none of them — three tolerances agreeing is a fragile way to answer a
+   * question the link list answers directly. `stepNearest` asks it directly and
+   * only fails when there is genuinely nowhere to go.
    */
   _stepAlongStreet() {
     const sv = this.streetView;
     if (!sv) return false;
     if (sv.stepRelative?.(0)) return true;
-
-    const available = sv.availableDirections?.() ?? {};
-    for (const [name, degrees] of [['right', 90], ['left', -90], ['back', 180]]) {
-      if (available[name] && sv.stepRelative?.(degrees)) return true;
-    }
-    return false;
+    return Boolean(sv.stepNearest?.(sv.heading ?? 0));
   }
 
   _advance() {

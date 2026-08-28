@@ -598,7 +598,8 @@ export class App {
     this.campaign = new CampaignDirector({
       dummies: this.dummies,
       shard: this.shard,
-      streetView: this.streetView,
+      // A getter, because the backdrop is built later, during `load()`.
+      streetView: () => this.streetView,
       scenes: SCENES,
       hud: this.campaignHUD,
       getFacing: () => this._facing(),

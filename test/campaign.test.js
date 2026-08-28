@@ -156,8 +156,9 @@ function makeDirector(overrides = {}) {
     update() {}
   };
   const streetView = {
-    steps: [], moves: [],
+    steps: [], moves: [], nearest: [], heading: 0,
     stepRelative(deg) { this.steps.push(deg); return true; },
+    stepNearest(heading) { this.nearest.push(heading); return true; },
     availableDirections: () => ({ forward: true, right: true, back: true, left: true }),
     moveTo(lat, lng) { this.moves.push({ lat, lng }); return true; }
   };
@@ -257,10 +258,23 @@ test('the last node of a location crosses to the next country instead of steppin
   assert.equal(ctx.director.node.location.sceneId, 'shibuya');
 });
 
-test('a step blocked in every direction does not strand the campaign', () => {
+test('forward refused falls through to the nearest exit in any direction', () => {
+  const ctx = makeDirector();
+  ctx.streetView.heading = 118;
+  ctx.streetView.stepRelative = function () { this.steps.push(0); return false; };
+  ctx.director.start({ resume: false });
+  clearNode(ctx);
+
+  assert.deepEqual(ctx.streetView.steps, [0], 'forward was tried first');
+  assert.deepEqual(ctx.streetView.nearest, [118],
+    'then the nearest exit, asked of the link list directly');
+  assert.equal(ctx.director.index, 1);
+});
+
+test('a panorama with no exits at all does not strand the campaign', () => {
   const ctx = makeDirector();
   ctx.streetView.stepRelative = () => false;
-  ctx.streetView.availableDirections = () => ({ forward: false, right: false, back: false, left: false });
+  ctx.streetView.stepNearest = () => false;
   ctx.director.start({ resume: false });
   clearNode(ctx);
 
@@ -294,6 +308,22 @@ test('the campaign ends after the last node', () => {
   ctx.director._enterNode({ arriving: false });
   clearNode(ctx);
   assert.equal(ctx.director.state, STATE.DONE);
+});
+
+test('the backdrop is resolved on use, not captured at construction', () => {
+  /*
+   * App builds the director in its constructor and the backdrop later, during
+   * an async load. Captured at construction the reference is null forever, and
+   * every step silently does nothing — which is exactly what shipped once.
+   */
+  const ctx = makeDirector({ streetView: null });
+  let backdrop = null;
+  ctx.director.streetView = () => backdrop;
+  ctx.director.start({ resume: false });
+
+  backdrop = ctx.streetView;               // ...arrives after construction
+  clearNode(ctx);
+  assert.equal(ctx.streetView.steps.length, 1, 'the step reached the backdrop');
 });
 
 test('free roam can be left and the campaign resumed where it stood', () => {
