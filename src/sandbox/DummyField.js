@@ -24,14 +24,29 @@ const _position = new Vector3();
  *                  cannot be aimed at or avoided, so it contributes pressure
  *                  without contributing anything to do
  *
- * Still not the wave director: no escalation, no upgrades, no failure state.
- * Batches repeat at whatever composition the roster asks for.
+ * Two ways to run it:
+ *
+ *   start()      endless. Batches repeat forever at the roster's composition.
+ *                This is free play, and it is what the sandbox has always been.
+ *   startWave()  a finite list. Exactly `count` arrive, drawn from a roster the
+ *                caller supplies, and when the last one falls `onCleared` fires
+ *                and nothing further is queued.
+ *
+ * The finite mode is what a level is built out of: an encounter that can be
+ * *finished* is the difference between a sandbox and a campaign. Everything
+ * else — the stagger, the telegraph, the view cap, the rest between batches —
+ * is shared, because those are the things that make it comfortable and a
+ * campaign should not feel worse than the sandbox did.
+ *
+ * Still not the wave director: no escalation formula, no upgrades, no failure
+ * state. Composition is a list the caller hands in, not a curve computed here.
  */
 
 const PHASE = Object.freeze({
   RESTING: 'resting',
   ARRIVING: 'arriving',
-  ENGAGED: 'engaged'
+  ENGAGED: 'engaged',
+  CLEARED: 'cleared'
 });
 
 export class DummyField {
@@ -52,6 +67,16 @@ export class DummyField {
     this.pending = [];
     this._nextIndex = 0;
     this.enabled = false;
+
+    /**
+     * How many are still to arrive. `Infinity` is the endless sandbox; a finite
+     * number is a wave that can be finished.
+     */
+    this.quota = Infinity;
+    /** Overrides `settings.encounter.roster` for the current wave, if set. */
+    this._roster = null;
+    /** Set by the caller: the last of a finite wave has fallen. */
+    this.onCleared = null;
   }
 
   get config() {
@@ -60,6 +85,29 @@ export class DummyField {
 
   /** Begin. The first batch waits out a short rest so nothing lands on boot. */
   start() {
+    this.quota = Infinity;
+    this._roster = null;
+    this._begin();
+  }
+
+  /**
+   * Run a finite encounter.
+   *
+   * `count` is the whole wave, not the batch: it is still delivered in batches
+   * of `batchSize` with the usual rest between them, so eight arrivals are two
+   * groups with a breath in the middle rather than a wall of eight. That is the
+   * same pacing free play has, and it is the reason a level does not need its
+   * own pacing code.
+   *
+   * @param {{roster: Array, count: number}} wave
+   */
+  startWave({ roster, count }) {
+    this.quota = Math.max(0, count);
+    this._roster = roster?.length ? roster : null;
+    this._begin();
+  }
+
+  _begin() {
     this.enabled = true;
     this.enemies.stopSpawning();
     this.enemies.clearEnemies({ resetKills: true });
@@ -67,6 +115,11 @@ export class DummyField {
     this.pending.length = 0;
     this.batch = 0;
     this._enterRest(this.config.openingDelay);
+  }
+
+  /** The roster this wave draws from — the caller's if it supplied one. */
+  get roster() {
+    return this._roster ?? this.config.roster;
   }
 
   _enterRest(seconds = this.config.restSeconds) {
@@ -86,7 +139,10 @@ export class DummyField {
     this.phase = PHASE.ARRIVING;
     this.pending.length = 0;
 
-    for (let i = 0; i < this.config.batchSize; i++) {
+    // A finite wave's last batch is whatever is left of the quota, which is how
+    // a two-enemy node and an eight-enemy node come out of the same code.
+    const size = Math.min(this.config.batchSize, this.quota);
+    for (let i = 0; i < size; i++) {
       const spot = this._chooseSpot(this._nextIndex++);
       const lead = this.telegraph?.mark(spot.x, spot.z) ?? 0;
       this.pending.push({
@@ -96,6 +152,7 @@ export class DummyField {
         descriptor: this._chooseDescriptor(i)
       });
     }
+    if (Number.isFinite(this.quota)) this.quota -= size;
     this.timer = 0;
   }
 
@@ -124,7 +181,7 @@ export class DummyField {
    * thing to edit when designing an encounter, and nothing here needs changing.
    */
   _chooseDescriptor(indexInBatch) {
-    const roster = this.config.roster;
+    const roster = this.roster;
     const entry = roster[(this.batch - 1 + indexInBatch) % roster.length];
     return {
       archetype: entry.archetype,
@@ -194,13 +251,27 @@ export class DummyField {
       return;
     }
 
-    // ENGAGED: wait for the field to clear, then rest. The gap between batches
-    // is the whole point — it is where the pressure goes.
-    if (alive === 0) this._enterRest();
+    // ENGAGED: wait for the field to clear. In free play that means another
+    // rest; in a finite wave with nothing left to send, it means the encounter
+    // is over. The gap between batches is the whole point — it is where the
+    // pressure goes.
+    if (alive !== 0) return;
+    if (this.quota > 0) {
+      this._enterRest();
+      return;
+    }
+
+    // Latched before the callback, so a listener that starts the next wave
+    // synchronously is not immediately overwritten by this frame.
+    this.phase = PHASE.CLEARED;
+    this.enabled = false;
+    this.onCleared?.();
   }
 
   stop() {
     this.enabled = false;
+    this.quota = Infinity;
+    this._roster = null;
     this.pending.length = 0;
     this.telegraph?.clear();
     this.enemies.clearEnemies({ resetKills: true });

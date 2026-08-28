@@ -35,6 +35,9 @@ export class SceneSelector {
       </button>
       <div class="scene-selector__progress" data-progress aria-hidden="true"><i></i></div>
       <div class="scene-selector__list" data-list role="listbox">
+        <button class="scene-selector__resume" data-resume type="button" hidden>
+          ↩ 回到战役
+        </button>
         ${SCENES.map(
           (scene) => `
           <button class="scene-selector__item" data-scene="${scene.id}" type="button" role="option">
@@ -54,6 +57,14 @@ export class SceneSelector {
     this.flagEl = this.element.querySelector('[data-flag]');
     this.nameEl = this.element.querySelector('[data-name]');
     this.progress = this.element.querySelector('[data-progress]');
+    this.resumeButton = this.element.querySelector('[data-resume]');
+    /** Set by App: return to the campaign node the player left. */
+    this.onResume = null;
+    this.resumeButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.setOpen(false);
+      this.onResume?.();
+    });
 
     this._bind();
   }
@@ -90,6 +101,16 @@ export class SceneSelector {
     this.open = open;
     this.element.classList.toggle('is-open', open);
     this.toggle.setAttribute('aria-expanded', String(open));
+  }
+
+  /**
+   * Offer the way back into the campaign.
+   *
+   * Picking a place by hand is free roam, and free roam stops the campaign —
+   * without this the only route back would be a page reload.
+   */
+  setResumeVisible(visible) {
+    this.resumeButton.hidden = !visible;
   }
 
   /** @param {import('../config/scenes.js').SCENES[number]} scene */

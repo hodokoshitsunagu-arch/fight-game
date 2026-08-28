@@ -245,6 +245,20 @@ export class StreetViewBackdrop {
         });
       }
 
+      /*
+       * Prove the viewer actually works before declaring it ready.
+       *
+       * A key the API rejects still yields a `StreetViewPanorama` object — it
+       * is simply hollow, and every accessor on it throws from inside Google's
+       * code. Reading back the position is the cheapest call that touches the
+       * same machinery, so a rejected key fails here, inside the guard, rather
+       * than three frames later in the render loop.
+       */
+      if (typeof this.panorama.getPosition !== 'function' || !this.panorama.getPosition()) {
+        this.error = 'viewer did not initialise (check the key\'s referrer restrictions)';
+        return false;
+      }
+
       this.ready = true;
       this.walkable = (this.panorama.getLinks?.() ?? []).length > 0;
 

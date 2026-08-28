@@ -337,6 +337,35 @@ export const settings = {
    * enemy is; a gap between batches is what makes the same fight feel unhurried,
    * because you can see the end of the thing you are in.
    */
+  /*
+   * The campaign.
+   *
+   * Only the numbers live here; the levels themselves are content and live in
+   * `src/campaign/campaign.js`. The split is the same one `scenes.js` makes —
+   * a copy edit and a timing tweak should not land in the same file.
+   */
+  campaign: {
+    enabled: true,
+
+    /* --- the relic shard --- *
+     * Placement is bounded by the locked pitch. The view is a level slice, so
+     * a shard has to sit near eye height at middle distance to be on screen at
+     * every aspect ratio, and at a bearing far enough off-centre that it has to
+     * be turned towards rather than simply noticed.
+     */
+    shardHeight: 1.35,        // metres — just under the 1.68m eyeline
+    shardMinDistance: 14,
+    shardMaxDistance: 26,
+    shardMinBearing: 0.9,     // radians off the current view, so it is a turn
+    shardMaxBearing: 2.5,     // ...but never quite straight behind
+
+    /* --- pacing --- */
+    collectPause: 1.2,        // beat between picking it up and moving on
+    beatSeconds: 3.4,         // how long a story line stays up
+    transitionSeconds: 1.6,   // chapter fade, each way
+    introSeconds: 4.0         // the card shown on arriving somewhere new
+  },
+
   encounter: {
     batchSize: 5,
     restSeconds: 6,      // the pause between batches — the low-pressure dial

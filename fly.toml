@@ -1,5 +1,5 @@
 # Static hosting for the built site.
-app = "voice-spellcasting"
+app = "voice-spellcast-7c7a"
 primary_region = "iad"
 
 [build]

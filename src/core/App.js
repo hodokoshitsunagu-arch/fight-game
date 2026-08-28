@@ -37,6 +37,9 @@ import { PostProcessing } from '../postprocessing/PostProcessing.js';
 
 import { VoiceController } from '../voice/VoiceController.js';
 import { DummyField } from '../sandbox/DummyField.js';
+import { CampaignDirector } from '../campaign/CampaignDirector.js';
+import { RelicShard } from '../campaign/RelicShard.js';
+import { CampaignHUD } from '../ui/CampaignHUD.js';
 import { SpawnTelegraph } from '../sandbox/SpawnTelegraph.js';
 import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
 import { SceneSelector } from '../ui/SceneSelector.js';
@@ -223,6 +226,8 @@ export class App {
       this.gameUI.setSandbox(true);
       this.spawnTelegraph = new SpawnTelegraph(this.scene);
       this.dummies = new DummyField(this.enemies, { telegraph: this.spawnTelegraph });
+      this.shard = new RelicShard(this.scene);
+      this.campaignHUD = new CampaignHUD(document.body);
       this.mana = new Mana();
       this.statusBar = new StatusBar(document.body);
 
@@ -256,8 +261,15 @@ export class App {
         // OrbitControls and a first-person look would fight over the same
         // pointer and the same camera every frame.
         this.rig.controls.enabled = false;
-        // A press that never became a drag is an aim, not a look.
-        this.firstPerson.onTap = () => this.aim.confirm();
+        /*
+         * A press that never became a drag is an aim — unless there is a relic
+         * shard under it. The shard is offered the tap first and consumes it on
+         * a hit, so picking one up never also throws a spell at it.
+         */
+        this.firstPerson.onTap = (event) => {
+          if (this.shard?.tryPick(event, this.camera, canvas)) return;
+          this.aim.confirm();
+        };
         // Dummies arrive from wherever the view is pointing.
         this.dummies.getFacing = () => this.firstPerson.yaw + Math.PI;
       }
@@ -267,7 +279,8 @@ export class App {
         camera: this.camera,
         enemies: this.enemies,
         character: this.character,
-        canCast: (element) => this.canControl && (this.cooldowns.get(element) ?? 0) <= 0,
+        canCast: (element) =>
+          this.canControl && this._isUnlocked(element) && (this.cooldowns.get(element) ?? 0) <= 0,
         // Reuse the keyboard cast's own follow-through, so a spoken cast throws
         // the body and burns the cooldown exactly like a clicked one.
         onCast: (element) => {
@@ -281,6 +294,7 @@ export class App {
         }
       });
       this._bindVoice();
+      this._buildCampaign();
     }
 
     this.combat.setUpgradeManager(this.session.upgrades);
@@ -564,6 +578,67 @@ export class App {
     this.miniMap.setPosition(survey.position, survey.links);
   }
 
+
+  /** Where the player is looking, in the convention the field and shard use. */
+  _facing() {
+    return this.firstPerson ? this.firstPerson.yaw + Math.PI : 0;
+  }
+
+  /**
+   * The campaign, wired to the systems it directs.
+   *
+   * The director owns ordering only — it starts waves, places shards and asks
+   * the backdrop to walk. Everything it touches is reached through a public
+   * method that already existed for the sandbox, which is why the whole thing
+   * unit-tests with none of them present.
+   */
+  _buildCampaign() {
+    if (!settings.campaign.enabled) return;
+
+    this.campaign = new CampaignDirector({
+      dummies: this.dummies,
+      shard: this.shard,
+      streetView: this.streetView,
+      scenes: SCENES,
+      hud: this.campaignHUD,
+      getFacing: () => this._facing(),
+      getCurrentSceneId: () => this.scene_?.id ?? null
+    });
+
+    /*
+     * Crossing a border is the same operation the scene selector performs, so
+     * it reuses the same follow-through: anything belonging to the old street
+     * has to go, or a spell in flight over Dubai arrives in Sydney.
+     */
+    this.campaign.onLocationChange = (scene) => {
+      if (!scene) return;
+      this.scene_ = scene;
+      settings.environment.streetViewLat = scene.lat;
+      settings.environment.streetViewLng = scene.lng;
+      this.sceneSelector?.setCurrent(scene);
+      this.clearEffects();
+      this.combat.reset();
+      this.damageNumbers.clear();
+      this.character.position.set(0, this.character.position.y, 0);
+      this.character.root.position.set(0, this.character.root.position.y, 0);
+      this.rig.setAnchor(0, 0, 0);
+      this._alignCameraToStreet();
+    };
+
+    // Spells arrive two per level. Casting one you have not been taught yet
+    // would make the teaching order decorative.
+    this.campaign.onUnlocks = (elements) => {
+      this._unlocked = new Set(elements);
+      this.hud?.setUnlocked?.(this._unlocked);
+    };
+  }
+
+  /** Whether an element may be cast — the campaign gates it, free roam does not. */
+  _isUnlocked(element) {
+    if (!this.campaign || this.campaign.state === 'idle') return true;
+    return this._unlocked ? this._unlocked.has(element) : true;
+  }
+
   /**
    * The scene list, and what happens when one is chosen.
    *
@@ -591,9 +666,31 @@ export class App {
       this.character.position.set(0, this.character.position.y, 0);
       this.character.root.position.set(0, this.character.root.position.y, 0);
       this.rig.setAnchor(0, 0, 0);
+      /*
+       * Jumping by hand is free roam, and free roam is the endless sandbox.
+       * Restarting the campaign's wave here would drop the player into a fight
+       * authored for a street they just left.
+       */
+      if (this.campaign) {
+        this.campaign.stop();
+        this.campaignHUD?.setObjective({ remaining: 0, shard: false });
+        this.campaignHUD?.setHint('');
+        this.sceneSelector.setResumeVisible(true);
+        this.hud?.setUnlocked?.(null);
+      }
+      this.shard?.clear();
       this.dummies?.start();
       this._alignCameraToStreet();
       return true;
+    };
+
+    this.sceneSelector.onResume = () => {
+      if (!this.campaign) return;
+      this.sceneSelector.setResumeVisible(false);
+      this.clearEffects();
+      this.combat.reset();
+      this.damageNumbers.clear();
+      this.campaign.resume();
     };
   }
 
@@ -1037,9 +1134,29 @@ export class App {
         settings.environment.streetViewLng = DEFAULT_SCENE.lng;
       }
       this.loading.setProgress(0.15, 'Connecting Street View…');
-      await this._startStreetView(
-        params.get('gmapskey') || import.meta.env?.VITE_GOOGLE_MAPS_KEY || ''
-      );
+      /*
+       * Boot must survive a bad key.
+       *
+       * `load()` guards itself, but a key the API rejects — most often
+       * `RefererNotAllowedMapError`, a domain missing from the key's referrer
+       * list — does not fail cleanly. The API hands back panorama objects that
+       * exist and are crippled, so construction succeeds and the *next* call
+       * into one throws from inside Google's code, after `load()` has already
+       * returned. Unguarded, that killed the whole boot and left the loading
+       * bar up forever, which is exactly the silent black screen this path was
+       * written to avoid.
+       */
+      try {
+        await this._startStreetView(
+          params.get('gmapskey') || import.meta.env?.VITE_GOOGLE_MAPS_KEY || ''
+        );
+      } catch (error) {
+        this.streetViewError = `crashed: ${error?.message ?? error}`;
+        this.streetView = null;
+        settings.environment.backgroundMode = 'flat';
+        console.warn('[streetview] not shown:', this.streetViewError);
+        this._showStreetViewNotice('failed');
+      }
     }
 
     // `?panorama=./hdri/whatever.jpg` overrides the configured backdrop, so a
@@ -1145,7 +1262,10 @@ export class App {
 
   start() {
     this.time.reset();
-    if (this.sandbox) this.dummies.start();
+    if (this.sandbox) {
+      if (this.campaign) this.campaign.start();
+      else this.dummies.start();
+    }
     const loop = () => {
       this._raf = requestAnimationFrame(loop);
       this.frame();
@@ -1211,6 +1331,20 @@ export class App {
     // viewer is told where the camera looks and draws its own pixels.
     if (this.sandbox) {
       this.dummies.update(raw);
+      /*
+       * Wall-clock, not the clamped simulation delta.
+       *
+       * `Time` caps `delta` at 1/20s so a stall cannot hand the solver a huge
+       * step — correct for physics, wrong for a card someone is reading. Paced
+       * off the clamp, a 4-second intro takes 26 seconds at 3fps, and the
+       * slowdown lands precisely when a panorama is loading.
+       */
+      const wall = this.time.realDelta;
+      this.campaign?.update(wall);
+      this.campaignHUD?.update(wall);
+      if (this.campaignHUD && this.shard) {
+        this.campaignHUD.setShardBearing(this.shard.screenBearing(this._facing()));
+      }
       this.mana.update(raw);
       this.statusBar.update(
         { current: this.session.player.currentHP, max: this.session.player.maxHP },
@@ -1344,6 +1478,9 @@ export class App {
       this.voice.dispose();
       this.voiceHUD.dispose();
       this.dummies.dispose();
+      this.campaign?.dispose();
+      this.shard?.dispose();
+      this.campaignHUD?.dispose();
     }
     this.input.dispose();
     this.aim.dispose();

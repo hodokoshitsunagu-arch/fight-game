@@ -126,9 +126,16 @@ export class HUD {
       this.cards.set(card.dataset.element, card);
       card.addEventListener('pointerdown', (event) => {
         event.stopPropagation();
+        if (card.classList.contains('is-locked')) return;
         this.onAbility?.(card.dataset.element);
       });
     }
+    /**
+     * Spells the campaign has taught so far; `null` is free roam, where
+     * everything is available.
+     */
+    this._unlocked = null;
+
     this.selfCards = new Map();
     for (const card of root.querySelectorAll('.ability-card[data-self-ability]')) {
       this.selfCards.set(card.dataset.selfAbility, card);
@@ -137,6 +144,20 @@ export class HUD {
         this.onSelfAbility?.(card.dataset.selfAbility);
       });
     }
+
+    /*
+     * The campaign hands over two spells a level. A locked card stays visible
+     * rather than being removed — seeing what is coming is part of what makes
+     * the progression legible — but it is dimmed and does not respond, so it
+     * cannot be selected and then silently refuse to cast.
+     */
+    this.setUnlocked = (unlocked) => {
+      this._unlocked = unlocked ?? null;
+      for (const [element, card] of this.cards) {
+        const locked = this._unlocked ? !this._unlocked.has(element) : false;
+        card.classList.toggle('is-locked', locked);
+      }
+    };
 
     this.stats = {
       fps: root.querySelector('[data-stat="fps"]'),
