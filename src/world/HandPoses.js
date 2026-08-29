@@ -25,11 +25,18 @@
 
 /**
  * @param {number[]} pos metres, camera space
- * @param {number[]} rot radians
+ * @param {number[]} rot radians, the forearm
  * @param {number} curl 0 open palm, 1 closed fist
  * @param {number} spread 0 fingers together, 1 splayed
+ * @param {number[]} wrist radians, the hand relative to the forearm
+ *
+ * The wrist is separate from the forearm because a real arm has two joints and
+ * the interesting gestures need both: fingers pointing up while the forearm
+ * still comes in from below is a wrist, and rotating the whole arm to fake it
+ * swings the elbow through the frame.
  */
-const P = (pos = [0, 0, 0], rot = [0, 0, 0], curl = 0, spread = 0) => ({ pos, rot, curl, spread });
+const P = (pos = [0, 0, 0], rot = [0, 0, 0], curl = 0, spread = 0, wrist = [0, 0, 0]) =>
+  ({ pos, rot, curl, spread, wrist });
 
 /** Rest, so a keyframe can say "back to neutral" without repeating zeroes. */
 export const REST = P();
@@ -58,13 +65,48 @@ export const CLIPS = {
   seal: {
     duration: 1.6,
     loop: true,
+    /*
+     * Taken from the footage rather than invented.
+     *
+     * The first pass had the hands low, close together and half closed, which
+     * is a reasonable guess at "a seal" and is not what the reference does. In
+     * the video the hands come to the *centre of frame*, wrists nearly
+     * touching, fingers pointing up and spread wide, palms turned away — the
+     * backs of the hands are what the camera sees. It reads as presenting the
+     * world rather than as clutching something, which is the difference
+     * between a caster and a man holding a sandwich.
+     */
     keys: [
-      { t: 0.0, left: P([0.07, 0.05, 0.06], [-0.5, 0.5, 0.3], 0.55, 0),
-                right: P([-0.07, 0.05, 0.06], [-0.5, -0.5, -0.3], 0.55, 0) },
-      { t: 0.5, left: P([0.08, 0.075, 0.05], [-0.56, 0.54, 0.34], 0.62, 0),
-                right: P([-0.08, 0.075, 0.05], [-0.56, -0.54, -0.34], 0.62, 0) },
-      { t: 1.0, left: P([0.07, 0.05, 0.06], [-0.5, 0.5, 0.3], 0.55, 0),
-                right: P([-0.07, 0.05, 0.06], [-0.5, -0.5, -0.3], 0.55, 0) }
+      /*
+       * `left` is the hand on the *screen's* left, resting at negative x — so
+       * moving it toward the centre is +x, not -x. Signed the other way first,
+       * which pushed both hands outward until the palms sat at ndc 1.31: off
+       * screen, during the one gesture that is supposed to be the centrepiece.
+       */
+      /*
+       * Two signs worth writing down, because both were wrong first time.
+       *
+       * `left` is the hand on the *screen's* left, resting at negative x — so
+       * moving it toward the centre is +x. Signed the other way, both palms sat
+       * at ndc 1.31: off screen, during the one gesture meant to be the
+       * centrepiece.
+       *
+       * And the wrist pitches about X, where fingers extend along -z: rotating
+       * by -θ swings them to -y. Negative points the fingers at the floor, which
+       * is exactly what it did — a downward claw where the reference has an
+       * open hand raised to the sky.
+       *
+       * The forearm pitch is the same axis and bit the same way. The rest pose
+       * sits at -0.28, which puts the hand *below* the elbow; raising the hand
+       * into frame needs a positive delta large enough to cross zero, or the
+       * forearm ends up standing in front of the hand it is attached to.
+       */
+      { t: 0.0, left: P([0.045, 0.02, 0.03], [0.52, 0.30, 0.10], 0.05, 0.85, [0.95, 0.10, 0.18]),
+                right: P([-0.045, 0.02, 0.03], [0.52, -0.30, -0.10], 0.05, 0.85, [0.95, -0.10, -0.18]) },
+      { t: 0.5, left: P([0.058, 0.035, 0.02], [0.60, 0.26, 0.12], 0.0, 1.0, [1.05, 0.08, 0.20]),
+                right: P([-0.058, 0.035, 0.02], [0.60, -0.26, -0.12], 0.0, 1.0, [1.05, -0.08, -0.20]) },
+      { t: 1.0, left: P([0.045, 0.02, 0.03], [0.52, 0.30, 0.10], 0.05, 0.85, [0.95, 0.10, 0.18]),
+                right: P([-0.045, 0.02, 0.03], [0.52, -0.30, -0.10], 0.05, 0.85, [0.95, -0.10, -0.18]) }
     ]
   },
 
@@ -77,8 +119,8 @@ export const CLIPS = {
       { t: 0.18, left: P([0.03, -0.02, 0.10], [0.22, 0.1, 0.05], 0.8, 0),
                  right: P([-0.02, -0.03, 0.12], [0.3, -0.05, -0.06], 0.85, 0) },
       // Release. The leading hand opens as it drives out.
-      { t: 0.42, left: P([-0.01, 0.03, -0.20], [-0.5, -0.06, -0.04], 0.1, 0.7),
-                 right: P([0.02, 0.0, -0.08], [-0.25, 0.05, 0.05], 0.5, 0.2) },
+      { t: 0.42, left: P([-0.01, 0.03, -0.20], [-0.5, -0.06, -0.04], 0.1, 0.7, [-0.35, 0, 0]),
+                 right: P([0.02, 0.0, -0.08], [-0.25, 0.05, 0.05], 0.5, 0.2, [-0.2, 0, 0]) },
       // Overshoot, then settle — the follow-through is what carries the weight.
       { t: 0.68, left: P([0.0, 0.01, -0.05], [-0.18, -0.02, 0.0], 0.3, 0.3),
                  right: P([0.0, 0.0, -0.02], [-0.1, 0.0, 0.0], 0.35, 0.1) },
@@ -95,8 +137,8 @@ export const CLIPS = {
                  right: P([-0.02, 0.12, 0.03], [-0.92, -0.16, -0.1], 0.7, 0) },
       { t: 0.30, left: P([0.02, 0.135, 0.025], [-0.96, 0.16, 0.1], 0.75, 0),
                  right: P([-0.02, 0.135, 0.025], [-0.96, -0.16, -0.1], 0.75, 0) },
-      { t: 0.52, left: P([0.01, -0.08, -0.14], [0.5, 0.06, 0.04], 0.15, 0.6),
-                 right: P([-0.01, -0.08, -0.14], [0.5, -0.06, -0.04], 0.15, 0.6) },
+      { t: 0.52, left: P([0.01, -0.08, -0.14], [0.5, 0.06, 0.04], 0.15, 0.6, [0.45, 0, 0]),
+                 right: P([-0.01, -0.08, -0.14], [0.5, -0.06, -0.04], 0.15, 0.6, [0.45, 0, 0]) },
       { t: 0.74, left: P([0.0, -0.02, -0.04], [0.16, 0.02, 0.0], 0.3, 0.3),
                  right: P([0.0, -0.02, -0.04], [0.16, -0.02, 0.0], 0.3, 0.3) },
       { t: 1.0,  left: REST, right: REST }
@@ -111,8 +153,8 @@ export const CLIPS = {
       { t: 0.22, left: P([0.05, 0.10, 0.04], [-0.75, 0.3, 0.5], 0.35, 0.4),
                  right: P([-0.05, 0.10, 0.04], [-0.75, -0.3, -0.5], 0.35, 0.4) },
       // The press. Palms rotate flat and push down and out.
-      { t: 0.48, left: P([0.05, -0.06, -0.10], [0.85, 0.24, 0.55], 0.0, 1.0),
-                 right: P([-0.05, -0.06, -0.10], [0.85, -0.24, -0.55], 0.0, 1.0) },
+      { t: 0.48, left: P([0.05, -0.06, -0.10], [0.85, 0.24, 0.55], 0.0, 1.0, [0.5, 0, 0]),
+                 right: P([-0.05, -0.06, -0.10], [0.85, -0.24, -0.55], 0.0, 1.0, [0.5, 0, 0]) },
       { t: 0.72, left: P([0.04, -0.05, -0.04], [0.5, 0.14, 0.34], 0.1, 0.8),
                  right: P([-0.04, -0.05, -0.04], [0.5, -0.14, -0.34], 0.1, 0.8) },
       { t: 1.0,  left: REST, right: REST }
@@ -143,8 +185,8 @@ export const CLIPS = {
       { t: 0.0,  left: REST, right: REST },
       { t: 0.2,  left: P([0.05, 0.02, 0.11], [-0.1, 0.35, 0.2], 0.6, 0.2),
                  right: P([-0.05, 0.02, 0.11], [-0.1, -0.35, -0.2], 0.6, 0.2) },
-      { t: 0.44, left: P([0.03, 0.02, -0.19], [-0.15, 0.1, 0.05], 0.0, 1.0),
-                 right: P([-0.03, 0.02, -0.19], [-0.15, -0.1, -0.05], 0.0, 1.0) },
+      { t: 0.44, left: P([0.03, 0.02, -0.19], [-0.15, 0.1, 0.05], 0.0, 1.0, [-0.55, 0, 0]),
+                 right: P([-0.03, 0.02, -0.19], [-0.15, -0.1, -0.05], 0.0, 1.0, [-0.55, 0, 0]) },
       { t: 0.72, left: P([0.01, 0.0, -0.04], [-0.05, 0.03, 0.0], 0.15, 0.6),
                  right: P([-0.01, 0.0, -0.04], [-0.05, -0.03, 0.0], 0.15, 0.6) },
       { t: 1.0,  left: REST, right: REST }
@@ -224,6 +266,7 @@ export function sampleClip(clip, t, out) {
     for (let axis = 0; axis < 3; axis++) {
       dst.pos[axis] = lerp(from.pos[axis], to.pos[axis], local);
       dst.rot[axis] = lerp(from.rot[axis], to.rot[axis], local);
+      dst.wrist[axis] = lerp(from.wrist[axis], to.wrist[axis], local);
     }
     dst.curl = lerp(from.curl, to.curl, local);
     dst.spread = lerp(from.spread, to.spread, local);
@@ -234,7 +277,7 @@ export function sampleClip(clip, t, out) {
 /** A scratch pair for `sampleClip` to write into. */
 export function makeSample() {
   return {
-    left: { pos: [0, 0, 0], rot: [0, 0, 0], curl: 0, spread: 0 },
-    right: { pos: [0, 0, 0], rot: [0, 0, 0], curl: 0, spread: 0 }
+    left: { pos: [0, 0, 0], rot: [0, 0, 0], curl: 0, spread: 0, wrist: [0, 0, 0] },
+    right: { pos: [0, 0, 0], rot: [0, 0, 0], curl: 0, spread: 0, wrist: [0, 0, 0] }
   };
 }

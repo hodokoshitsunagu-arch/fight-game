@@ -1,6 +1,7 @@
 import {
   BoxGeometry,
   CapsuleGeometry,
+  CylinderGeometry,
   Vector3,
   Group,
   Mesh,
@@ -98,15 +99,23 @@ export class FirstPersonHands {
   _buildArm(side, skin, sleeve) {
     const arm = new Group();
 
-    // Thinner and shorter than before: the forearm is context, not the subject.
-    const forearm = new Mesh(new CapsuleGeometry(0.041, 0.17, 4, 8), sleeve);
+    /*
+     * Tapered, not a tube.
+     *
+     * A uniform capsule reads as a pipe. In the reference the forearm is a
+     * slender wedge narrowing into the wrist, which is both what an arm looks
+     * like and what keeps the eye travelling toward the hand — where the
+     * gesture is. Rotated onto z, the cylinder's +y end becomes the wrist end,
+     * so that is the thin one.
+     */
+    const forearm = new Mesh(new CylinderGeometry(0.032, 0.05, 0.19, 10), sleeve);
     forearm.rotation.x = Math.PI / 2;
-    forearm.position.z = -0.10;
+    forearm.position.z = -0.11;
     arm.add(forearm);
 
-    const wrist = new Mesh(new CapsuleGeometry(0.036, 0.05, 4, 8), skin);
+    const wrist = new Mesh(new CapsuleGeometry(0.031, 0.035, 4, 8), skin);
     wrist.rotation.x = Math.PI / 2;
-    wrist.position.z = -0.24;
+    wrist.position.z = -0.235;
     arm.add(wrist);
 
     /*
@@ -123,14 +132,16 @@ export class FirstPersonHands {
     // Fingers hang off a knuckle group, which is the thing `curl` rotates.
     const knuckle = new Group();
     knuckle.position.z = -0.066;
-    const fingerGeometry = new CapsuleGeometry(0.0125, 0.068, 3, 6);
+    // Nearly palm length. At two thirds they read as knuckles, and an open
+    // hand and a fist stop being different silhouettes.
+    const fingerGeometry = new CapsuleGeometry(0.0132, 0.094, 3, 6);
     const fingers = [];
     for (let i = 0; i < 4; i++) {
       const finger = new Mesh(fingerGeometry, skin);
       finger.rotation.x = Math.PI / 2;
       // Spread across the width of the palm, longest in the middle.
-      finger.position.set(-0.036 + i * 0.024, 0, -0.038 - (i === 1 || i === 2 ? 0.008 : 0));
-      finger.userData.fan = (i - 1.5) * 0.16;
+      finger.position.set(-0.036 + i * 0.024, 0, -0.052 - (i === 1 || i === 2 ? 0.009 : 0));
+      finger.userData.fan = (i - 1.5) * 0.26;
       knuckle.add(finger);
       fingers.push(finger);
     }
@@ -259,6 +270,13 @@ export class FirstPersonHands {
         base.x + stride * 0.6 + (active ? pose.rot[0] * weight : 0),
         base.y + (active ? pose.rot[1] * weight : 0),
         base.z + (active ? pose.rot[2] * weight : 0)
+      );
+
+      const hand = arm.userData.hand;
+      hand.rotation.set(
+        active ? pose.wrist[0] * weight : 0,
+        active ? pose.wrist[1] * weight : 0,
+        active ? pose.wrist[2] * weight : 0
       );
 
       this._shapeHand(arm, active ? pose.curl * weight : 0, active ? pose.spread * weight : 0);

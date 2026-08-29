@@ -93,3 +93,40 @@ test('sampling never allocates, and clamps outside its range', () => {
   assert.equal(before.left.pos[2], 0, 'before the start is rest');
   assert.equal(sampleClip(CLIPS.thrust, 2, out).left.pos[2], 0, 'after the end is rest');
 });
+
+test('the wrist is its own joint, and the seal uses it', () => {
+  /*
+   * Fingers pointing up while the forearm still comes in from below is a
+   * wrist. Faking it by rotating the whole arm swings the elbow through the
+   * frame, which is why this channel exists at all.
+   */
+  const s = at(CLIPS.seal, 0.5);
+  // Fingers run along -z; a *positive* X rotation swings them to +y. Negative
+  // points them at the floor, which is what it did until this was pinned down.
+  assert.ok(s.left.wrist[0] > 0.8, 'the seal pitches the hand up hard');
+  assert.ok(s.left.rot[0] > 0.3,
+    'and lifts the forearm past the rest pitch, so the hand clears the elbow');
+});
+
+test('the seal presents rather than clutches', () => {
+  // Taken from the reference: hands to the centre, fingers up and spread wide,
+  // palms turned away. The first pass had them low and half closed.
+  const s = at(CLIPS.seal, 0.5);
+  assert.ok(s.left.spread > 0.9, 'fingers splayed');
+  assert.ok(s.left.curl < 0.1, 'and open, not curled');
+  /*
+   * `left` rests at negative x, so inward is +x. The first version of this
+   * assertion encoded the opposite and passed happily while the hands were
+   * being pushed off screen — a test agreeing with the bug it should catch.
+   */
+  assert.ok(s.left.pos[0] > 0 && s.right.pos[0] < 0,
+    'both hands travel inward, toward each other');
+  assert.ok(s.left.rot[0] > 0.3, 'and up into frame, mostly by rotation');
+});
+
+test('the seal is symmetric', () => {
+  const s = at(CLIPS.seal, 0.5);
+  assert.equal(s.left.pos[0], -s.right.pos[0]);
+  assert.equal(s.left.wrist[1], -s.right.wrist[1]);
+  assert.equal(s.left.curl, s.right.curl);
+});
