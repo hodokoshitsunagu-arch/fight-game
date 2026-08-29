@@ -2208,6 +2208,22 @@ export const settings = {
     pitchLimit: 78,    // degrees either side of level, when pitch is unlocked
     handBob: 1.0,      // 0 stills the hands entirely
 
+    /*
+     * The first-person hand animation layer.
+     *
+     * Blend rates are asymmetric on purpose: a gesture has to be *on* almost
+     * immediately or the cast has already left before the hands move, while
+     * fading out slowly is what reads as follow-through rather than as the
+     * animation being switched off.
+     */
+    hands: {
+      blendIn: 16,      // per second, toward full weight
+      blendOut: 7,      // ...and back down, deliberately slower
+      // Even the worst-pronounced cast still throws a real gesture; scaling a
+      // motion to nothing would read as the hands failing, not the player.
+      minStrength: 0.55
+    },
+
     targetHeight: 1.35,
     damping: 0.06,
     autoFrame: 0.35 // how strongly the rig drifts toward an active cast

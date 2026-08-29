@@ -285,7 +285,14 @@ export class App {
         // the body and burns the cooldown exactly like a clicked one.
         onCast: (element) => {
           this.mana?.spend();
-          this.hands?.punch();
+          /*
+           * The gesture is chosen by the spell and sized by how it was said.
+           * A score arrives a moment later on the final result, so the throw
+           * opens at full strength and the *next* one carries the verdict —
+           * scaling this one retroactively would rewind a motion already on
+           * screen.
+           */
+          this.hands?.cast(element, this.voice?.lastScore?.score ?? 1);
           this.selectAbility(element);
           this.cooldowns.set(element, this._cooldownFor(element));
           this.character.setFacing(this.voice.targets.yaw);
@@ -902,7 +909,19 @@ export class App {
     window.addEventListener('keydown', this._onVoiceKeyDown);
     window.addEventListener('keyup', this._onVoiceKeyUp);
 
-    this.voice.on('listening', (listening) => this.voiceHUD.setListening(listening));
+    this.voice.on('listening', (listening) => {
+      this.voiceHUD.setListening(listening);
+      /*
+       * The hands prepare for as long as somebody is speaking.
+       *
+       * Driven by the microphone rather than by the cast, because the cast
+       * fires a few hundred milliseconds after the player has committed to it
+       * — a gesture that starts then is always late, and the seal held while
+       * talking is the whole reason the reference footage reads as casting
+       * rather than as pointing.
+       */
+      this.hands?.setCharging(listening);
+    });
     this.voice.on('transcript', (text) => this.voiceHUD.setTranscript(text));
     this.voice.on('cast', (element, modifiers) => this.voiceHUD.showCast(element, modifiers));
     this.voice.on('mutate', (modifier) => this.voiceHUD.showMutation(modifier));
