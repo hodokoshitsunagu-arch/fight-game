@@ -1809,18 +1809,47 @@ body {
 
 /* --- the line that teaches ------------------------------------------ */
 
-.campaign-hint {
+/*
+ * Guidance and its score, stacked.
+ *
+ * They were positioned independently at fixed offsets, which held only while
+ * the advice was one line — the second rung of the ladder wraps to two and the
+ * score landed on top of it. Stacking them means the line count can be
+ * whatever the copy needs.
+ */
+.campaign-guidance {
   position: absolute;
   top: 92px;
   left: 10px;
   right: 172px;
-  /* Same band as the objective above it, for the same reason. */
-  color: var(--ui-text-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+/*
+ * Backed, not just shadowed.
+ *
+ * Dim grey with a text-shadow is legible over the flat stage and disappears
+ * completely over a sunlit Times Square — measured unreadable in the daytime
+ * panorama the campaign actually opens on. Guidance that cannot be read is not
+ * guidance, so it gets the same plate the objective pill has.
+ */
+.campaign-hint {
+  max-width: 100%;
+  padding: 5px 11px;
+  border: 1px solid var(--ui-border);
+  border-radius: 11px;
+  background: var(--ui-bg-solid);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--ui-text);
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.55;
   letter-spacing: 0.04em;
   text-align: center;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
   opacity: 0;
   transition: opacity 0.3s ease;
 }
@@ -1927,4 +1956,84 @@ body {
 
 .scene-selector__resume[hidden] {
   display: none;
+}
+
+/* --- how that one was said -------------------------------------------- *
+ * Sits in the same left band as the objective and hint, below them. A bar
+ * rather than a number: its job is to explain why the last spell came out
+ * bigger or smaller, and nobody reads "0.78" as an explanation. */
+
+.campaign-score {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.campaign-score.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.campaign-score__bar {
+  position: relative;
+  width: 54px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.campaign-score__bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 999px;
+  background: #7fe0a0;
+  transition: width 0.3s ease, background 0.2s ease;
+}
+
+.campaign-score.is-fail .campaign-score__bar i {
+  background: #ff9a6a;
+}
+
+.campaign-score__label {
+  color: var(--ui-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.campaign-score.is-fail .campaign-score__label {
+  color: #ff9a6a;
+}
+
+/* Advice that just changed, marked without a modal interrupting the fight. */
+@keyframes campaign-hint-flash {
+  0%, 100% { color: var(--ui-text); border-color: var(--ui-border); }
+  20%, 60% { color: #ffd67a; border-color: rgba(255, 214, 122, 0.6); }
+}
+
+.campaign-hint.is-flashing {
+  animation: campaign-hint-flash 1.8s ease-in-out 2;
+}
+
+/* The level's task, stated once on its first card. */
+.campaign-card__brief {
+  display: none;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-border);
+  color: #ffd67a;
+  font-size: 12px;
+  line-height: 1.7;
+  letter-spacing: 0.04em;
+}
+
+.campaign-card__brief.is-visible {
+  display: block;
 }

@@ -204,6 +204,17 @@ export class Ability {
     // pooled instance from inheriting the previous cast's modifiers.
     this._overrides = overrides ?? null;
 
+    /*
+     * How hard this particular cast hits, from how clearly it was spoken.
+     *
+     * Reset here with everything else, because instances are pooled: a
+     * recycled ability inheriting the previous cast's power would look like
+     * random damage variance and would be very hard to trace back to a
+     * microphone. `CombatSystem` multiplies by it; the visuals follow the
+     * scale overrides instead.
+     */
+    this.powerScale = 1;
+
     this.origin.set(origin.x, 0, origin.z);
     this.direction.copy(direction).setY(0).normalize();
     this.side.crossVectors(this.direction, _up).normalize();

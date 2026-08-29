@@ -2458,7 +2458,33 @@ export const settings = {
     // A field never moves further than this from its authored value, so a
     // modifier can never push an effect somewhere it was never tuned to go.
     clampLow: 0.15,
-    clampHigh: 4.0
+    clampHigh: 4.0,
+
+    /*
+     * Scoring every utterance.
+     *
+     * A cast that fired is never taken back — the spell already left your
+     * hands, and cancelling it half a second later on the recogniser's opinion
+     * would feel like the game breaking rather than the player missing. It is
+     * scaled instead, so the feedback lands in the effect you are already
+     * watching.
+     */
+    scoring: {
+      enabled: true,
+      passMark: 0.6,
+      /*
+       * How far the recogniser's confidence can move a score, either way.
+       *
+       * The score is led by how close the words were to the spell's name and
+       * only trimmed by confidence. An even blend got both interesting cases
+       * backwards — a confident mishearing passed, a clear phrase in a noisy
+       * room failed — so confidence is a modifier here, never the gate.
+       */
+      confidenceInfluence: 0.3,
+      minScale: 0.65,   // what the worst recognised cast comes out at
+      maxScale: 1.15,   // ...and the best, a step above the tuned baseline
+      strikesBeforeHelp: 3
+    }
   }
 };
 

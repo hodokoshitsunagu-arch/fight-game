@@ -356,3 +356,117 @@ test('resuming in place costs nothing', () => {
   ctx.director.resume();
   assert.equal(ctx.streetView.moves.length, 0, 'and no billed request was made');
 });
+
+/* --------------------------------------------------- pronunciation scoring */
+
+test('similarity gates the score and confidence only trims it', async () => {
+  const { scoreUtterance } = await import('../src/voice/PronunciationScore.js');
+  const said = (t, c) => scoreUtterance({ transcript: t, element: 'ice', confidence: c, lang: 'en-US' });
+
+  // The two judgements that matter, and the two an even blend got backwards.
+  assert.equal(said('frost lance', 0.25).passed, true,
+    'said correctly in a noisy room still passes');
+  assert.equal(said('frizzle dance', 0.95).passed, false,
+    'a confident mishearing does not');
+
+  assert.ok(said('frost lance', 0.95).score > said('frost lance', 0.25).score,
+    'confidence still moves the score');
+  assert.equal(said('greater frost lance please', 0.9).passed, true,
+    'saying more than the spell is not a mistake');
+});
+
+test('an utterance that matched no spell scores zero', async () => {
+  const { scoreUtterance } = await import('../src/voice/PronunciationScore.js');
+  const r = scoreUtterance({ transcript: 'what time is it', element: null, confidence: 0.95, lang: 'en-US' });
+  assert.equal(r.score, 0);
+  assert.equal(r.passed, false);
+});
+
+test('the score never scales a cast to nothing, or to something absurd', async () => {
+  const { scaleForScore } = await import('../src/voice/PronunciationScore.js');
+  const cfg = settings.voice.scoring;
+  assert.equal(scaleForScore(0), cfg.minScale, 'the worst cast is still a cast');
+  assert.equal(scaleForScore(1), cfg.maxScale);
+  assert.ok(cfg.minScale > 0.4 && cfg.maxScale < 1.6, 'and neither end is punishing');
+});
+
+test('Chinese is scored against the Chinese name', async () => {
+  const { scoreUtterance } = await import('../src/voice/PronunciationScore.js');
+  const r = scoreUtterance({ transcript: '冰霜长枪', element: 'ice', confidence: 0.9, lang: 'zh-CN' });
+  assert.equal(r.similarity, 1);
+  assert.equal(r.passed, true);
+});
+
+/* ------------------------------------------------------- guidance ladder */
+
+test('three failing utterances in a row change the advice', () => {
+  const ctx = makeDirector();
+  const hints = [];
+  ctx.director.hud = { setHint: (t) => hints.push(t), flashHint: () => {}, setScore: () => {} };
+  ctx.director.start({ resume: false });
+  run(ctx.director, settings.campaign.introSeconds + 0.5);
+
+  const first = hints.at(-1);
+  const fail = { score: 0.2, passed: false, similarity: 0.3 };
+  ctx.director.noteScore(fail);
+  ctx.director.noteScore(fail);
+  assert.equal(hints.at(-1), first, 'two is not a pattern');
+
+  ctx.director.noteScore(fail);
+  assert.notEqual(hints.at(-1), first, 'three is');
+  assert.match(hints.at(-1), /照着念/, 'and the next rung spells the phrase out');
+});
+
+test('one good utterance resets the strike count outright', () => {
+  const ctx = makeDirector();
+  ctx.director.hud = { setHint: () => {}, flashHint: () => {}, setScore: () => {} };
+  ctx.director.start({ resume: false });
+  run(ctx.director, settings.campaign.introSeconds + 0.5);
+
+  ctx.director.noteScore({ score: 0.2, passed: false, similarity: 0.3 });
+  ctx.director.noteScore({ score: 0.2, passed: false, similarity: 0.3 });
+  assert.equal(ctx.director.strikes, 2);
+
+  ctx.director.noteScore({ score: 0.9, passed: true, similarity: 1 });
+  assert.equal(ctx.director.strikes, 0, 'being understood clears the slate');
+  assert.equal(ctx.director.guidanceStep, 0, 'and no help was ever needed');
+});
+
+test('the ladder stops at its last rung rather than cycling', () => {
+  const ctx = makeDirector();
+  ctx.director.hud = { setHint: () => {}, flashHint: () => {}, setScore: () => {} };
+  ctx.director.start({ resume: false });
+  const fail = { score: 0.1, passed: false, similarity: 0.2 };
+  for (let i = 0; i < 30; i++) ctx.director.noteScore(fail);
+
+  assert.equal(ctx.director.guidanceStep, 2, 'climbs to the top and stays');
+  assert.match(ctx.director.guidanceText(), /点右上角技能栏/,
+    'the last rung gives up on voice and points at the touch controls');
+});
+
+test('every level states its task, and the card only shows it once', () => {
+  for (const level of LEVELS) {
+    assert.ok(level.brief && level.brief.length > 10, `${level.zh} has a task line`);
+  }
+  const cards = [];
+  const ctx = makeDirector();
+  ctx.director.hud = {
+    showCard: (place, body, brief) => cards.push({ place, brief }),
+    setHint: () => {}, setObjective: () => {}, setLevel: () => {},
+    setProgress: () => {}, hideCard: () => {}, showBeat: () => {}, fade: () => {}
+  };
+  ctx.director.start({ resume: false });
+  assert.ok(cards[0].brief, 'the first location of a level states the task');
+
+  // Walk to the level's second location.
+  ctx.director.index = 2;
+  ctx.director._enterNode({ arriving: true });
+  assert.equal(cards.at(-1).brief, null, 'the second does not repeat it');
+});
+
+test('the campaign knows where it will open before it has started', () => {
+  const ctx = makeDirector();
+  const planned = ctx.director.plannedScene();
+  assert.equal(planned.id, 'times-square', 'so Street View can come up on the right street');
+  assert.equal(ctx.director.state, STATE.IDLE, 'and nothing was started to find out');
+});

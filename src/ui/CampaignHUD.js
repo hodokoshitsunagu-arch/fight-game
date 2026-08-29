@@ -32,12 +32,19 @@ export class CampaignHUD {
         <span class="campaign-objective__text" data-objective-text></span>
         <span class="campaign-objective__arrow" data-arrow aria-hidden="true">➤</span>
       </div>
-      <div class="campaign-hint" data-hint></div>
+      <div class="campaign-guidance">
+        <div class="campaign-hint" data-hint></div>
+        <div class="campaign-score" data-score>
+          <span class="campaign-score__bar"><i data-score-fill></i></span>
+          <span class="campaign-score__label" data-score-label></span>
+        </div>
+      </div>
       <div class="campaign-beat" data-beat></div>
       <div class="campaign-card" data-card>
         <div class="campaign-card__level" data-card-level></div>
         <div class="campaign-card__place" data-card-place></div>
         <div class="campaign-card__body" data-card-body></div>
+        <div class="campaign-card__brief" data-card-brief></div>
       </div>`;
     root.appendChild(this.wrapper);
 
@@ -52,6 +59,11 @@ export class CampaignHUD {
     this.cardLevel = q('card-level');
     this.cardPlace = q('card-place');
     this.cardBody = q('card-body');
+    this.cardBrief = q('card-brief');
+    this.scoreEl = q('score');
+    this.scoreFill = q('score-fill');
+    this.scoreLabel = q('score-label');
+    this._scoreTimer = 0;
 
     this._beatTimer = 0;
   }
@@ -96,6 +108,37 @@ export class CampaignHUD {
     this.hintEl.classList.toggle('is-visible', Boolean(text));
   }
 
+  /** Draw the eye to advice that just changed, without a modal. */
+  flashHint() {
+    this.hintEl.classList.remove('is-flashing');
+    // Reading `offsetWidth` restarts the animation; without it, re-adding the
+    // class on an element that already has it does nothing at all.
+    void this.hintEl.offsetWidth;
+    this.hintEl.classList.add('is-flashing');
+  }
+
+  /**
+   * How that one was said.
+   *
+   * A bar rather than a number: the score's job is to explain why the last
+   * spell came out bigger or smaller than the one before it, and nobody reads
+   * "0.78" as an explanation of anything. It fades out on its own, because a
+   * permanent scoreboard would turn a spellcasting toy into a test.
+   */
+  setScore(result) {
+    if (!result) return;
+    const pct = Math.round(result.score * 100);
+    this.scoreFill.style.width = `${pct}%`;
+    this.scoreEl.classList.toggle('is-fail', !result.passed);
+    this.scoreLabel.textContent = result.passed
+      ? `发音 ${pct} · 威力 ↑`
+      : result.similarity < 0.25
+        ? '没听清'
+        : `发音 ${pct} · 威力 ↓`;
+    this.scoreEl.classList.add('is-visible');
+    this._scoreTimer = 2.4;
+  }
+
   setLevel(level, locationIndex, scene) {
     this._level = level;
     this._scene = scene;
@@ -114,10 +157,13 @@ export class CampaignHUD {
     this._beatTimer = 3.4;
   }
 
-  showCard(place, body) {
+  showCard(place, body, brief = null) {
     this.cardLevel.textContent = this._level ? `第 ${this._levelNumber()} 关 · ${this._level.zh}` : '';
     this.cardPlace.textContent = place ?? '';
     this.cardBody.textContent = body ?? '';
+    // The task, stated on the level's first card only.
+    this.cardBrief.textContent = brief ?? '';
+    this.cardBrief.classList.toggle('is-visible', Boolean(brief));
     this.cardEl.classList.add('is-visible');
   }
 
@@ -128,6 +174,7 @@ export class CampaignHUD {
   showDone(shards) {
     this.setObjective({ remaining: 0, shard: false });
     this.setHint('');
+    this.cardBrief.classList.remove('is-visible');
     this.cardLevel.textContent = '战役结束';
     this.cardPlace.textContent = `${shards} 枚遗物碎片`;
     this.cardBody.textContent = '遗物完整了。十个地方，你走过了它们全部。';
@@ -144,6 +191,10 @@ export class CampaignHUD {
   }
 
   update(dt) {
+    if (this._scoreTimer > 0) {
+      this._scoreTimer -= dt;
+      if (this._scoreTimer <= 0) this.scoreEl.classList.remove('is-visible');
+    }
     if (this._beatTimer <= 0) return;
     this._beatTimer -= dt;
     if (this._beatTimer <= 0) this.beatEl.classList.remove('is-visible');

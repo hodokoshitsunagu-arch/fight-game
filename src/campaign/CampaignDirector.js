@@ -1,5 +1,6 @@
 import { settings } from '../config/settings.js';
-import { LEVELS, flattenNodes, unlockedAt } from './campaign.js';
+import { LEVELS, GUIDANCE, flattenNodes, unlockedAt } from './campaign.js';
+import { ELEMENT_META } from '../config/settings.js';
 
 /**
  * CampaignDirector.js — turns a sandbox into a run.
@@ -76,6 +77,10 @@ export class CampaignDirector {
     this.timer = 0;
     this.shardsCollected = 0;
 
+    /** Consecutive failing utterances, and how far up the help ladder we are. */
+    this.strikes = 0;
+    this.guidanceStep = 0;
+
     /** Set by App: the campaign wants to be somewhere else. */
     this.onLocationChange = null;
     /** Set by App: the set of castable elements changed. */
@@ -141,6 +146,20 @@ export class CampaignDirector {
     this._enterNode({ arriving: true });
   }
 
+  /**
+   * Where the campaign will open, before anything has started.
+   *
+   * `load()` needs this to bring Street View up on the right street, and it
+   * runs before `start()` has read the save — so the save is peeked at here
+   * without touching any state.
+   */
+  plannedScene() {
+    const saved = this._load();
+    const index = saved && saved.index < this.nodes.length ? saved.index : 0;
+    const id = this.nodes[index]?.location?.sceneId;
+    return this.scenes.find((s) => s.id === id) ?? null;
+  }
+
   /** Move the world to the current node's location, if it is not already there. */
   _ensureLocation() {
     const scene = this.scene;
@@ -171,7 +190,13 @@ export class CampaignDirector {
     if (arriving) {
       this.state = STATE.INTRO;
       this.timer = settings.campaign.introSeconds;
-      this.hud?.showCard?.(this.scene?.zh ?? '', node.location.intro);
+      /*
+       * The level's task is stated once, on the level's first location. Every
+       * arrival repeating it would train the player to skip the card, which is
+       * the one place the task is ever written down.
+       */
+      const brief = node.locationIndex === 0 ? node.level.brief : null;
+      this.hud?.showCard?.(this.scene?.zh ?? '', node.location.intro, brief);
       return;
     }
     this._beginFight();
@@ -180,9 +205,58 @@ export class CampaignDirector {
   _beginFight() {
     const node = this.node;
     this.state = STATE.FIGHTING;
-    this.hud?.setHint?.(node.hint);
+    // Strikes are per node; the rung reached is not. Somebody who needed the
+    // explicit phrasing on the last street still needs it on this one.
+    this.strikes = 0;
+    this.hud?.setHint?.(this.guidanceText());
     this.hud?.setObjective?.({ remaining: node.count, shard: false });
     this.dummies?.startWave({ roster: node.roster, count: node.count });
+  }
+
+  /* ------------------------------------------------------------- guidance */
+
+  /** The spell this node is asking for, by name, in the player's language. */
+  get taughtSpell() {
+    const element = this.level?.unlocks?.[0];
+    const meta = ELEMENT_META[element];
+    if (!meta) return '';
+    return settings.voice.lang?.startsWith('zh') ? meta.zhLabel : meta.label;
+  }
+
+  /** The current rung of the help ladder, as text. */
+  guidanceText() {
+    const rung = GUIDANCE[Math.min(this.guidanceStep, GUIDANCE.length - 1)];
+    return rung({ hint: this.node?.hint ?? '', spell: this.taughtSpell });
+  }
+
+  /**
+   * A spoken utterance was judged.
+   *
+   * Passing resets the ladder outright rather than decrementing it: somebody
+   * who has just been understood does not need to climb back down through the
+   * help they no longer need. Failing three times in a row is the signal that
+   * the current advice is not working, so the advice changes — repeating it is
+   * the one response guaranteed not to help.
+   */
+  noteScore(result) {
+    if (!result || this.state === STATE.IDLE || this.state === STATE.DONE) return;
+
+    if (result.passed) {
+      this.strikes = 0;
+      this.hud?.setScore?.(result);
+      return;
+    }
+
+    this.strikes++;
+    this.hud?.setScore?.(result);
+    if (this.strikes < settings.voice.scoring.strikesBeforeHelp) return;
+
+    this.strikes = 0;
+    // The last rung stays put — there is nowhere more explicit to go, and
+    // cycling back to the first would read as the game forgetting.
+    if (this.guidanceStep < GUIDANCE.length - 1) this.guidanceStep++;
+    this.hud?.setHint?.(this.guidanceText());
+    this.hud?.flashHint?.();
   }
 
   /* ------------------------------------------------------- objective events */

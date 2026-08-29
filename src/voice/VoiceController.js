@@ -12,8 +12,14 @@
  * while you are still talking. The mutation window closes after
  * `settings.voice.mutationWindow` seconds, or as soon as the cast finishes.
  *
+ * Every finished utterance is also scored, and the score reshapes the cast that
+ * is still in flight — the same mechanism trailing modifiers use. A mumbled
+ * spell is a smaller, weaker one rather than a refused one, because the cast
+ * has already left and taking it back half a second later reads as the game
+ * breaking rather than as the player missing.
+ *
  * Emits: `listening` (bool), `cast` (element, modifiers), `mutate` (modifier),
- * `transcript` (text, isFinal), `miss` (text), `error` (kind).
+ * `transcript` (text, isFinal), `miss` (text), `score` (result), `error` (kind).
  */
 
 import { EventEmitter } from '../utils/EventEmitter.js';
@@ -22,6 +28,8 @@ import { VoiceInput } from './VoiceInput.js';
 import { IntentParser } from './IntentParser.js';
 import { TargetSelector } from './TargetSelector.js';
 import { resolve } from './CastOverrides.js';
+import { scoreUtterance, scaleForScore } from './PronunciationScore.js';
+import { AXIS, fieldsForAxis } from './grammar.js';
 
 export class VoiceController extends EventEmitter {
   /**
@@ -45,6 +53,8 @@ export class VoiceController extends EventEmitter {
 
     this.listening = false;
     this.transcript = '';
+    /** The most recent utterance's verdict, or null before the first one. */
+    this.lastScore = null;
     this.heldKey = false;
 
     this._bind();
@@ -63,6 +73,7 @@ export class VoiceController extends EventEmitter {
 
       // Nothing in the finished utterance matched anything we know.
       if (isFinal && !this.parser.element) this.emit('miss', text);
+      if (isFinal) this._score(text, confidence);
     });
 
     this.input.on('start', () => this._setListening(true));
@@ -144,6 +155,65 @@ export class VoiceController extends EventEmitter {
     const overrides = resolve(this.liveElement, this.liveModifiers);
     this.live.setOverrides(overrides);
     this.emit('mutate', modifier, this.liveModifiers);
+  }
+
+  /**
+   * Judge the finished utterance, and let the verdict reach the spell.
+   *
+   * Only ever on a final result: Chrome reports 0 confidence on interim ones,
+   * and the whole phrase is not available to compare against the spell's name
+   * until the utterance ends. By then the cast has usually been in the air for
+   * a few hundred milliseconds — which is exactly the window the engine already
+   * re-reads its parameters in, so the correction is visible rather than
+   * retroactive.
+   */
+  _score(text, confidence) {
+    if (!settings.voice.scoring.enabled) return;
+
+    const element = this.parser.element ?? this.liveElement ?? null;
+    const result = scoreUtterance({
+      transcript: text,
+      element,
+      confidence,
+      lang: settings.voice.lang
+    });
+    this.lastScore = result;
+    // Applied before it is announced, so a listener reading the live cast sees
+    // the verdict already on it rather than the value from a frame ago.
+    if (element) this._applyScore(result.score);
+    this.emit('score', result, element);
+  }
+
+  /**
+   * Scale the live cast by the score.
+   *
+   * Range and size come from the SCALE axis and intensity from INTENSITY —
+   * the same field lists the spoken modifiers use, so a scored cast and a
+   * "greater" cast reshape the effect through one code path rather than two
+   * that can disagree. Damage rides on `powerScale`, which the ability blocks
+   * do not carry and `CombatSystem` reads directly.
+   */
+  _applyScore(score) {
+    if (!this.live || this.live.isFinished || !this.live.isActive) return;
+
+    const factor = scaleForScore(score);
+    this.live.powerScale = factor;
+
+    const block = settings[this.liveElement];
+    if (!block) return;
+
+    // Built on top of whatever the modifiers already resolved to, so "greater
+    // frost lance" said badly is still greater — just less so.
+    const base = this.liveModifiers.length ? resolve(this.liveElement, this.liveModifiers) : {};
+    const patch = { ...base };
+    for (const axis of [AXIS.SCALE, AXIS.INTENSITY]) {
+      for (const field of fieldsForAxis(block, axis)) {
+        const from = patch[field] ?? block[field];
+        if (typeof from !== 'number') continue;
+        patch[field] = from * factor;
+      }
+    }
+    this.live.setOverrides(patch);
   }
 
   _dropLive() {

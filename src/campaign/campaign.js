@@ -45,6 +45,7 @@ export const LEVELS = [
      * player works out that their own voice is the trigger.
      */
     unlocks: ['ice', 'thunder'],
+    brief: '击败这里的每一个敌人，再转身找到遗物碎片并点击拾取，就能走到下一条街。',
     teaches: '说出法术的名字就会施放。转身，让它对准你要打的东西。',
     locations: [
       {
@@ -96,6 +97,7 @@ export const LEVELS = [
      * because it only reads once you already know the baseline speed.
      */
     unlocks: ['meteor', 'beam'],
+    brief: '同样是清场加拾取，但敌人开始跑起来了。在法术名前面加一个词，改变它的大小和快慢。',
     teaches: '在法术名前面加一个词，就能改变它。「更大的冰霜长枪」「迅捷的新星光束」。',
     locations: [
       {
@@ -147,6 +149,7 @@ export const LEVELS = [
      * ground ahead of it actually works, which is the lesson.
      */
     unlocks: ['snare', 'glacier'],
+    brief: '出现了扛得住打的敌人。用区域法术封住地面，用左下角方向键换位置，再清场拾取。',
     teaches: '区域法术打的是地面，不是敌人。用方向键换个街角，让它们走进去。',
     locations: [
       {
@@ -213,6 +216,7 @@ export const LEVELS = [
      * and a hint that says it in plain words.
      */
     unlocks: ['void', 'phoenix'],
+    brief: '精英敌人登场。这一关要学的是：法术出手之后还能改——说完法术名，再补一个词。',
     teaches: '法术出手之后再说一个词，它会在飞行途中变。「裂隙斩」……「更大」。',
     locations: [
       {
@@ -278,6 +282,7 @@ export const LEVELS = [
      * being curiosities and become the way out.
      */
     unlocks: ['singularity', 'worldtree', 'repulse', 'heal'],
+    brief: '最后一关，四种敌人混编。法力会见底——留出「力场震退」和「翠绿治愈」的余量。',
     teaches: '法力有限。「力场震退」推开围上来的，「翠绿治愈」把血补回来。',
     locations: [
       {
@@ -342,6 +347,25 @@ export const LEVELS = [
       }
     ]
   }
+];
+
+/**
+ * What to say when it is not going well.
+ *
+ * Three rungs, climbed one at a time after a run of failing utterances. The
+ * ladder exists because the three reasons a spoken cast fails need three
+ * different answers, and repeating the first one louder helps with none of
+ * them: the player may not know the phrase, may not know how to hold the
+ * button, or may be somewhere the recogniser simply cannot hear them.
+ *
+ * The last rung gives up on voice entirely and points at the touch controls.
+ * A build that insists on its gimmick while somebody is stuck is a worse build
+ * than one that lets them keep playing.
+ */
+export const GUIDANCE = [
+  (ctx) => ctx.hint,
+  (ctx) => `照着念一遍：「${ctx.spell}」。按住麦克风，说完整再松手。`,
+  (ctx) => `念不出来也没关系——点右上角技能栏选中「${ctx.spell}」，再点画面施放。`
 ];
 
 /** Flat list of nodes in play order, so progress is a single index. */

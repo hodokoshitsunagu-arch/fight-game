@@ -139,7 +139,9 @@ export class CombatSystem {
         _direction.copy(ability.direction).setY(0).normalize();
       }
       enemy.applyDamage({
-        amount: profile.damage * damageMultiplier,
+        // `powerScale` is how clearly the spell was pronounced — 1 for anything
+        // cast by key or mouse, which never goes through the recogniser.
+        amount: profile.damage * damageMultiplier * (ability.powerScale ?? 1),
         castId: state.castId,
         tick,
         element: ability.element,

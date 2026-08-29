@@ -295,6 +295,9 @@ export class App {
       });
       this._bindVoice();
       this._buildCampaign();
+      // Every judged utterance reaches the campaign, which owns the strike
+      // count and decides when the advice on screen needs to change.
+      this.voice.on('score', (result) => this.campaign?.noteScore(result));
     }
 
     this.combat.setUpgradeManager(this.session.upgrades);
@@ -1114,6 +1117,24 @@ export class App {
     const params = typeof window !== 'undefined'
       ? new URLSearchParams(window.location.search)
       : new URLSearchParams();
+
+    /*
+     * The campaign is played on a street, so it turns Street View on itself.
+     *
+     * `backgroundMode` defaults to 'flat' and the backdrop used to need an
+     * explicit `?streetview`, which meant the first level of a campaign built
+     * entirely around walking down a road opened on an empty void. The query
+     * parameter still works, and still wins, because it can name a place.
+     */
+    if (!params.has('streetview') && settings.campaign.enabled && this.campaign) {
+      const planned = this.campaign.plannedScene();
+      if (planned) {
+        this.scene_ = planned;
+        settings.environment.streetViewLat = planned.lat;
+        settings.environment.streetViewLng = planned.lng;
+        params.set('streetview', planned.id);
+      }
+    }
 
     if (params.has('streetview')) {
       const at = params.get('streetview');
