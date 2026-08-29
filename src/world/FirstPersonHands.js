@@ -1,15 +1,8 @@
-import {
-  BoxGeometry,
-  CapsuleGeometry,
-  CylinderGeometry,
-  Vector3,
-  Group,
-  Mesh,
-  MeshStandardMaterial
-} from 'three';
+import { Vector3, Group } from 'three';
 import { settings } from '../config/settings.js';
 import { LAYER } from '../core/Layers.js';
 import { CLIPS, clipForElement, sampleClip, makeSample } from './HandPoses.js';
+import { TIER, createMaterials, buildArm } from './HandAssets.js';
 
 /**
  * FirstPersonHands.js — the two hands an unarmed caster shows you.
@@ -38,6 +31,14 @@ import { CLIPS, clipForElement, sampleClip, makeSample } from './HandPoses.js';
  * single `punch()` it replaced. A cast used to be one push forward and back,
  * identical for a lance, a meteor and a zone. Those are three different intents
  * and they now look like three different intents.
+ *
+ * ## Tiers
+ *
+ * What the hands are *made of* lives in `HandAssets`, in two tiers. The
+ * procedural one is boxes and capsules with flat colours and cannot fail; the
+ * high one has rounder geometry, two-jointed fingers and a textured skin
+ * material. Both present the same skeleton, so a gesture authored once plays on
+ * either and swapping the look can never break the motion.
  *
  * ## Fingers
  *
@@ -73,11 +74,11 @@ export class FirstPersonHands {
     this.group.layers.set(LAYER.VFX);
     camera.add(this.group);
 
-    const skin = new MeshStandardMaterial({ color: 0xb98a68, roughness: 0.82, metalness: 0 });
-    const sleeve = new MeshStandardMaterial({ color: 0x2a3340, roughness: 0.9, metalness: 0 });
-    this.materials = [skin, sleeve];
+    this.tier = settings.camera.hands.fidelity === TIER.HIGH ? TIER.HIGH : TIER.PROCEDURAL;
+    const parts = createMaterials(this.tier);
+    this.materials = parts.materials;
 
-    this.hands = [-1, 1].map((side) => this._buildArm(side, skin, sleeve));
+    this.hands = [-1, 1].map((side) => this._buildArm(side, parts));
 
     /* --- layer state --- */
     this._time = 0;
@@ -96,73 +97,19 @@ export class FirstPersonHands {
     this.setVisible(false);
   }
 
-  _buildArm(side, skin, sleeve) {
+  _buildArm(side, parts) {
     const arm = new Group();
-
-    /*
-     * Tapered, not a tube.
-     *
-     * A uniform capsule reads as a pipe. In the reference the forearm is a
-     * slender wedge narrowing into the wrist, which is both what an arm looks
-     * like and what keeps the eye travelling toward the hand — where the
-     * gesture is. Rotated onto z, the cylinder's +y end becomes the wrist end,
-     * so that is the thin one.
-     */
-    const forearm = new Mesh(new CylinderGeometry(0.032, 0.05, 0.19, 10), sleeve);
-    forearm.rotation.x = Math.PI / 2;
-    forearm.position.z = -0.11;
-    arm.add(forearm);
-
-    const wrist = new Mesh(new CapsuleGeometry(0.031, 0.035, 4, 8), skin);
-    wrist.rotation.x = Math.PI / 2;
-    wrist.position.z = -0.235;
-    arm.add(wrist);
-
-    /*
-     * The hand is its own group so a gesture can rotate the wrist without
-     * dragging the forearm through the player's face.
-     */
-    const hand = new Group();
-    hand.position.z = PALM_Z;
-
-    const palm = new Mesh(new BoxGeometry(0.098, 0.034, 0.105), skin);
-    palm.position.z = -0.015;
-    hand.add(palm);
-
-    // Fingers hang off a knuckle group, which is the thing `curl` rotates.
-    const knuckle = new Group();
-    knuckle.position.z = -0.066;
-    // Nearly palm length. At two thirds they read as knuckles, and an open
-    // hand and a fist stop being different silhouettes.
-    const fingerGeometry = new CapsuleGeometry(0.0132, 0.094, 3, 6);
-    const fingers = [];
-    for (let i = 0; i < 4; i++) {
-      const finger = new Mesh(fingerGeometry, skin);
-      finger.rotation.x = Math.PI / 2;
-      // Spread across the width of the palm, longest in the middle.
-      finger.position.set(-0.036 + i * 0.024, 0, -0.052 - (i === 1 || i === 2 ? 0.009 : 0));
-      finger.userData.fan = (i - 1.5) * 0.26;
-      knuckle.add(finger);
-      fingers.push(finger);
-    }
-    hand.add(knuckle);
-
-    const thumb = new Mesh(new CapsuleGeometry(0.015, 0.05, 3, 6), skin);
-    thumb.position.set(side * -0.048, 0, -0.016);
-    thumb.rotation.set(Math.PI / 2, 0, side * 0.9);
-    hand.add(thumb);
-
-    arm.add(hand);
+    const built = buildArm(arm, side, parts, this.tier, PALM_Z);
 
     arm.rotation.set(-0.28, side * 0.34, side * -0.16);
     arm.userData.side = side;
     arm.userData.rest = new Vector3();
     // The pose the rest position is solved against; layers move away from it.
     arm.userData.baseRotation = arm.rotation.clone();
-    arm.userData.hand = hand;
-    arm.userData.knuckle = knuckle;
-    arm.userData.fingers = fingers;
-    arm.userData.thumb = thumb;
+    arm.userData.hand = built.hand;
+    arm.userData.knuckle = built.knuckle;
+    arm.userData.fingers = built.fingers;
+    arm.userData.thumb = built.thumb;
 
     this.group.add(arm);
     return arm;
@@ -318,13 +265,35 @@ export class FirstPersonHands {
    */
   _shapeHand(arm, curl, spread) {
     const knuckle = arm.userData.knuckle;
-    knuckle.rotation.x = curl * 1.35;
+    // Toward the palm is -y, here as everywhere else on this axis.
+    knuckle.rotation.x = -curl * 1.15;
 
     const fingers = arm.userData.fingers;
     for (let i = 0; i < fingers.length; i++) {
       const finger = fingers[i];
       const lag = 1 + (i - 1.5) * 0.09;
-      finger.rotation.x = Math.PI / 2 + curl * 0.55 * lag;
+      const distal = finger.userData.distal;
+      if (distal) {
+        /*
+         * Two joints. A single rod rotating at the knuckle sweeps an arc and
+         * the tip never comes back toward the palm — which is what a fist is.
+         * The second joint bends harder than the first, as a real one does.
+         */
+        // Negative: fingers extend along -z and curl toward the *palm*, which
+        // is -y. Positive tips them back over the knuckles instead, which is
+        // why an open hand and a fist came out looking identical.
+        // ~145 degrees across the two joints at full curl. Less than this and
+        // a fist seen from the back of the hand is just a slightly shorter
+        // open hand.
+        finger.rotation.x = -curl * 1.05 * lag;
+        distal.rotation.x = -curl * 1.45 * lag;
+      } else {
+        // One capsule, already lying along -z, so the rest pitch is baked in —
+        // and the curl subtracts from it, for the same reason the two-jointed
+        // version does: toward the palm is -y. This was adding, which bent the
+        // fingers back over the knuckles.
+        finger.rotation.x = Math.PI / 2 - curl * 1.15 * lag;
+      }
       finger.rotation.y = finger.userData.fan * spread;
     }
 
@@ -416,5 +385,6 @@ export class FirstPersonHands {
     for (const arm of this.hands) {
       arm.traverse((node) => node.geometry?.dispose());
     }
+    // Textures belong to the materials, which dispose above.
   }
 }

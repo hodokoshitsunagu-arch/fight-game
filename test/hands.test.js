@@ -130,3 +130,70 @@ test('the seal is symmetric', () => {
   assert.equal(s.left.wrist[1], -s.right.wrist[1]);
   assert.equal(s.left.curl, s.right.curl);
 });
+
+/* ------------------------------------------------------------- geometry */
+
+test('curling moves the fingertips toward the palm, on both tiers', async () => {
+  /*
+   * Written because this exact sign has now been wrong four times, in four
+   * places, and every one of them compiled, ran, and looked reasonable in the
+   * source. A fingertip that travels *away* from the palm as the hand closes
+   * is a fist that looks identical to an open hand — which is precisely how it
+   * shipped once. The invariant is geometric, so test it geometrically.
+   */
+  const { Group, Vector3 } = await import('three');
+  const { buildArm, createMaterials, TIER } = await import('../src/world/HandAssets.js');
+  const { FirstPersonHands } = await import('../src/world/FirstPersonHands.js');
+
+  for (const tier of [TIER.PROCEDURAL, TIER.HIGH]) {
+    const arm = new Group();
+    const built = buildArm(arm, -1, createMaterials(tier), tier, -0.31);
+    arm.userData = { side: -1, ...built };
+
+    const tipOf = () => {
+      arm.updateMatrixWorld(true);
+      const finger = built.fingers[1];
+      // The asset tier says where its own tip is; measuring the finger's origin
+      // reports the knuckle, which barely moves and hides the whole bug.
+      const [x, y, z] = finger.userData.tipOffset;
+      return finger.userData.tipObject.localToWorld(new Vector3(x, y, z));
+    };
+
+    FirstPersonHands.prototype._shapeHand.call({}, arm, 0, 0);
+    const open = tipOf();
+    FirstPersonHands.prototype._shapeHand.call({}, arm, 1, 0);
+    const closed = tipOf();
+
+    assert.ok(closed.y < open.y - 0.005,
+      `${tier}: the fingertip drops toward the palm when the hand closes ` +
+      `(${open.y.toFixed(3)} → ${closed.y.toFixed(3)})`);
+  }
+});
+
+test('the high tier gives fingers a second joint and the procedural one does not', async () => {
+  const { Group } = await import('three');
+  const { buildArm, createMaterials, TIER } = await import('../src/world/HandAssets.js');
+
+  const parts = {};
+  for (const tier of [TIER.PROCEDURAL, TIER.HIGH]) {
+    const arm = new Group();
+    parts[tier] = buildArm(arm, -1, createMaterials(tier), tier, -0.31);
+  }
+  assert.equal(parts[TIER.PROCEDURAL].fingers[0].userData.distal, undefined);
+  assert.ok(parts[TIER.HIGH].fingers[0].userData.distal, 'two joints up here');
+
+  // Both must present the same skeleton, or a gesture would play on one tier
+  // and break on the other.
+  for (const key of ['hand', 'knuckle', 'fingers', 'thumb']) {
+    assert.ok(parts[TIER.PROCEDURAL][key], `procedural has ${key}`);
+    assert.ok(parts[TIER.HIGH][key], `high has ${key}`);
+  }
+  assert.equal(parts[TIER.PROCEDURAL].fingers.length, parts[TIER.HIGH].fingers.length);
+});
+
+test('the procedural tier needs no files at all', async () => {
+  const { createMaterials, TIER } = await import('../src/world/HandAssets.js');
+  const { skin } = createMaterials(TIER.PROCEDURAL);
+  assert.equal(skin.map, null, 'no texture to fetch, so nothing to fail');
+  assert.equal(skin.type, 'MeshStandardMaterial');
+});

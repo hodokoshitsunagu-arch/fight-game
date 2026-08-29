@@ -2217,6 +2217,17 @@ export const settings = {
      * animation being switched off.
      */
     hands: {
+      /*
+       * Which visual tier the hands are built from.
+       *
+       * `procedural` is boxes and capsules with flat colours — no files, no
+       * network, no way to fail, and the floor this never drops below.
+       * `high` swaps in rounder geometry, two-jointed fingers and a textured
+       * skin material, and falls back to the procedural materials by itself if
+       * the textures do not arrive. The animation is identical either way.
+       */
+      fidelity: 'high',
+
       blendIn: 16,      // per second, toward full weight
       blendOut: 7,      // ...and back down, deliberately slower
       // Even the worst-pronounced cast still throws a real gesture; scaling a
