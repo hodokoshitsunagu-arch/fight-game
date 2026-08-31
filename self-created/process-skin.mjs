@@ -39,6 +39,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const SIZE = 1024;
 const CROP = 0.80;
@@ -128,9 +129,18 @@ function main() {
 
   const after = seamError(blend, SIZE, SIZE);
 
-  // Keep what the model returned. This used to write over its own input, so a
-  // second attempt at the processing meant paying for a second generation.
-  const raw = file.replace(/(\.[^.]+)$/, '-raw$1');
+  /*
+   * Keep what the model returned, so a second attempt at the processing does
+   * not mean paying for a second generation.
+   *
+   * Beside this script rather than beside its output. `public/` is copied into
+   * the build whole — a gitignore does not stop Vite — so a raw tile left next
+   * to the finished one is 1.7MB shipped to every visitor for an asset the page
+   * never asks for. That is exactly what happened the first time.
+   */
+  const rawDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'raw');
+  fs.mkdirSync(rawDir, { recursive: true });
+  const raw = path.join(rawDir, path.basename(file));
   if (!fs.existsSync(raw)) fs.copyFileSync(file, raw);
   encode(blend, SIZE, SIZE, file);
 

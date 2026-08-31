@@ -149,5 +149,6 @@ dist
 
 # What the image model returned, before `process-skin.mjs` flattens and wraps
 # it. Kept on disk so reprocessing does not mean paying for another generation,
-# but it is 3.7MB the browser would never ask for, and `public/` ships whole.
-public/self-created/*-raw.*
+# but it is 3.7MB nothing ever loads. Deliberately outside `public/`, which
+# Vite copies into the build whole — this rule would not have saved us there.
+self-created/raw/
