@@ -149,8 +149,8 @@ export const LEVELS = [
      * ground ahead of it actually works, which is the lesson.
      */
     unlocks: ['snare', 'glacier'],
-    brief: '出现了扛得住打的敌人。用区域法术封住地面，用左下角方向键换位置，再清场拾取。',
-    teaches: '区域法术打的是地面，不是敌人。用方向键换个街角，让它们走进去。',
+    brief: '出现了扛得住打的敌人。用区域法术封住地面，上下滑动屏幕沿街换位置，再清场拾取。',
+    teaches: '区域法术打的是地面，不是敌人。上滑走到下个街角，让它们走进去。',
     locations: [
       {
         sceneId: 'red-square',
@@ -171,7 +171,7 @@ export const LEVELS = [
           {
             count: 5,
             roster: [T('chase'), N('chase'), R('chase'), N('wanderer'), N('sentry')],
-            hint: '被围住就用方向键退一格，重新拉开距离。',
+            hint: '被围住就向下滑动退一格，重新拉开距离。',
             beat: '广场空了。遗物指向南边，很坚决。'
           }
         ]

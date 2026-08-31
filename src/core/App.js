@@ -44,7 +44,6 @@ import { SpawnTelegraph } from '../sandbox/SpawnTelegraph.js';
 import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
 import { SceneSelector } from '../ui/SceneSelector.js';
 import { MiniMap } from '../ui/MiniMap.js';
-import { DirectionPad } from '../ui/DirectionPad.js';
 import { StatusBar } from '../ui/StatusBar.js';
 import { FirstPersonView } from './FirstPersonView.js';
 import { FirstPersonHands } from '../world/FirstPersonHands.js';
@@ -558,12 +557,40 @@ export class App {
     if (survey) this.miniMap.setPosition(survey.position, survey.links);
     this._miniMapPano = survey?.pano ?? null;
 
-    // Tapping an exit on the map is the precise move; the pad below is the
-    // coarse one. Both end up in the same `step`.
+    // Tapping an exit on the map is the precise move; swiping the screen is the
+    // coarse one. Both end up in the same step.
     this.miniMap.onStepHeading = (heading) => this.streetView.step(heading);
 
-    this.directionPad = new DirectionPad(document.body);
-    this.directionPad.onStep = (relative) => this.streetView.stepRelative(relative);
+    /*
+     * Walking is a swipe now, not a pad.
+     *
+     * The pad took a corner of a small screen to offer four buttons, three of
+     * which were usually the same road, and its enabled state disagreed with
+     * what a step would actually accept — measured as a lit button that
+     * produced no movement. A vertical drag is free (the pitch is locked, so
+     * that axis was discarded) and cannot lie about where it can go, because
+     * it asks the link list directly.
+     */
+    if (this.firstPerson) {
+      this.firstPerson.onWalk = (direction) => this._walk(direction);
+    }
+  }
+
+  /**
+   * Take one step along the street.
+   *
+   * Routed through `stepNearest` rather than `step`, which refuses anything
+   * more than a quarter turn off. For a swipe that refusal is wrong: the
+   * gesture means "go that way", and the honest answer to a road that bends is
+   * the nearest exit, not nothing at all.
+   *
+   * @param {number} direction `+1` forward, `-1` back
+   */
+  _walk(direction) {
+    const sv = this.streetView;
+    if (!sv?.ready) return false;
+    const heading = ((sv.heading ?? 0) + (direction > 0 ? 0 : 180) + 360) % 360;
+    return sv.stepNearest(heading);
   }
 
   /**
@@ -577,11 +604,6 @@ export class App {
   _updateMiniMap() {
     if (!this.miniMap?.ready) return;
     this.miniMap.setHeading(this.streetView.heading ?? 0);
-    // Availability turns with the camera, not just with the panorama: the same
-    // junction offers different forward/left/right depending on which way you
-    // are looking.
-    this.directionPad?.setAvailable(this.streetView.availableDirections());
-
     const survey = this.streetView.survey();
     if (!survey || survey.pano === this._miniMapPano) return;
     this._miniMapPano = survey.pano;
@@ -1509,7 +1531,6 @@ export class App {
     this.hands?.dispose();
     this.firstPerson?.dispose();
     this.statusBar?.dispose();
-    this.directionPad?.dispose();
     this.miniMap?.dispose();
     this.sceneSelector?.dispose();
     this.streetView?.dispose();

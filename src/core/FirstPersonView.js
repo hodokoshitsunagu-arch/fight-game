@@ -13,14 +13,29 @@ import { settings } from '../config/settings.js';
  * Roll is never written. A horizon that tilts against a photographed street
  * reads as broken instantly, and there is no gameplay reason to ever tilt it.
  *
- * The hard part is not the camera, it is the pointer. One finger has to both
- * look around and cast, and those cannot both fire on the same gesture — so a
+ * The hard part is not the camera, it is the pointer. One finger has to look
+ * around, walk, and cast, and those cannot all fire on the same gesture — so a
  * press is held until it either moves far enough to be a drag, or lifts without
  * having moved, which is a tap. Everything below `DRAG_SLOP` is somebody trying
  * to cast with a slightly unsteady thumb.
+ *
+ * Once it is a drag, the two axes do different jobs: horizontal turns, and
+ * vertical walks. That split is free — with the pitch locked, vertical drag was
+ * being thrown away — and it replaces a four-button pad that took a corner of a
+ * small screen to offer what one swipe does.
  */
 
 const DRAG_SLOP = 8; // pixels before a press counts as looking rather than tapping
+
+/**
+ * Pixels of vertical travel that count as a step down the street.
+ *
+ * Vertical drag was doing nothing at all: `lockPitch` holds the horizon where
+ * the panorama put it, so up and down were simply discarded. That makes the
+ * axis free, and a swipe forward to walk forward needs no new control, no
+ * screen real estate, and nothing to learn.
+ */
+const WALK_THRESHOLD = 64;
 
 export class FirstPersonView {
   /**
@@ -41,6 +56,11 @@ export class FirstPersonView {
 
     /** Set by App: a press that turned out to be a tap, not a drag. */
     this.onTap = null;
+    /** Set by App: a vertical swipe. `+1` forward, `-1` back. */
+    this.onWalk = null;
+
+    /** Vertical travel banked since the last step, in pixels. */
+    this._walkTravel = 0;
 
     this._pointer = null;
     this._startX = 0;
@@ -61,6 +81,7 @@ export class FirstPersonView {
       this._startX = this._lastX = event.clientX;
       this._startY = this._lastY = event.clientY;
       this._dragging = false;
+      this._walkTravel = 0;
       try {
         this.dom.setPointerCapture(event.pointerId);
       } catch {
@@ -100,7 +121,22 @@ export class FirstPersonView {
           MathUtils.degToRad(-settings.camera.pitchLimit),
           MathUtils.degToRad(settings.camera.pitchLimit)
         );
+        return;
       }
+
+      /*
+       * Pitch is locked, so the vertical axis walks instead.
+       *
+       * Banked rather than sampled per frame: a step is a discrete hop to the
+       * next capture point, and firing one per frame of a slow drag would run
+       * down the street. Crossing the threshold spends the bank, so holding a
+       * long drag walks repeatedly at a readable pace instead of teleporting.
+       */
+      this._walkTravel -= dy;
+      if (Math.abs(this._walkTravel) < WALK_THRESHOLD) return;
+      const direction = this._walkTravel > 0 ? 1 : -1;
+      this._walkTravel = 0;
+      this.onWalk?.(direction);
     };
 
     this._onUp = (event) => {

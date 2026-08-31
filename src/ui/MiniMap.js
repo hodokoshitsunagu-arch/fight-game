@@ -16,7 +16,7 @@
  *   the trail     where have I been, which is the only way to tell one identical
  *                 stretch of pavement from another
  *
- * The direction pad used to live in here and does not any more: two controls
+ * A direction pad used to live in here, then in the corner, and now nowhere:
  * were fighting for the same 150 pixels and the pad won, covering the street
  * layout that is the only thing a map this small has to say. Tapping an exit
  * directly still works, and is the precise version of what the pad does

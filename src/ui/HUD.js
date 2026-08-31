@@ -95,7 +95,7 @@ export class HUD {
         <div class="hud__help-zh">Or tap a spell on the right, then tap the ground to cast</div>
 
         <div class="hud__help-note" style="margin-top:8px">
-          \u5355\u6307\u62d6\u52a8\u65cb\u8f6c\u955c\u5934 \xb7 \u53cc\u6307\u634f\u5408\u7f29\u653e<br>
+          \u5de6\u53f3\u62d6\u52a8\u8f6c\u89c6\u89d2 \xb7 \u4e0a\u4e0b\u6ed1\u52a8\u6cbf\u8857\u884c\u8d70<br>
           \u70b9\u53f3\u4e0a\u89d2\u201c\u6280\u80fd\u201d\u6807\u9898\u53ef\u6536\u8d77\u5217\u8868
         </div>
         <div class="hud__help-note">
