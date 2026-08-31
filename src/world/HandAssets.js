@@ -45,6 +45,17 @@ const SKIN_ALBEDO = './self-created/hand-skin.jpg';
 const SKIN_BUMP = './self-created/hand-skin-bump.jpg';
 
 /**
+ * Radial segments around a high-tier finger.
+ *
+ * 12 was visibly faceted, which is most of what "the hands look coarse" meant.
+ * A finger is 27mm across and covers a real fraction of a phone screen at
+ * 0.56m, so the polygon edges read. 20 costs about 900 triangles a hand more,
+ * paid for several times over by the geometry now being shared between the
+ * two arms rather than built twice.
+ */
+const FINGER_SEGMENTS = 20;
+
+/**
  * Build the materials for a tier.
  *
  * The high tier's textures load after the fact and are assigned when they
@@ -70,10 +81,14 @@ export function createMaterials(tier) {
     metalness: 0,
     sheen: 0.55,
     sheenColor: 0xff9c7a,
-    sheenRoughness: 0.8,
-    clearcoat: 0.06,
-    clearcoatRoughness: 0.9
+    sheenRoughness: 0.8
   });
+  /*
+   * No clearcoat. It was 0.06, which is invisible — and any non-zero value
+   * defines USE_CLEARCOAT, compiling in a whole second specular lobe and an
+   * extra IBL sample for every fragment of both hands. Paying a shader
+   * permutation for something nobody can see.
+   */
 
   /*
    * Only where there is a DOM to load into.
@@ -89,7 +104,18 @@ export function createMaterials(tier) {
   loader.load(SKIN_ALBEDO, (texture) => {
     texture.colorSpace = SRGBColorSpace;
     texture.wrapS = texture.wrapT = RepeatWrapping;
-    texture.repeat.set(2.2, 2.2);
+    /*
+     * Integer around the axis, or the tile does not meet itself.
+     *
+     * `u` runs 0..1 exactly once per circumference — see `normaliseU` — so a
+     * whole number of tiles lands the last column on the same texel as the
+     * first. 2.2 did not, and left a 346-pixel jump out of 1024 running the
+     * full length of every finger, every frame. `bumpMap` differentiates the
+     * UV, so it was a hard specular line as well as a colour break.
+     *
+     * Lengthwise it is free to be fractional: nothing wraps along `v`.
+     */
+    texture.repeat.set(2, 2.2);
     skin.map = texture;
     // The tile carries the colour now; tinting it again muddies it.
     skin.color.set(0xffffff);
@@ -97,7 +123,18 @@ export function createMaterials(tier) {
   });
   loader.load(SKIN_BUMP, (texture) => {
     texture.wrapS = texture.wrapT = RepeatWrapping;
-    texture.repeat.set(2.2, 2.2);
+    /*
+     * Integer around the axis, or the tile does not meet itself.
+     *
+     * `u` runs 0..1 exactly once per circumference — see `normaliseU` — so a
+     * whole number of tiles lands the last column on the same texel as the
+     * first. 2.2 did not, and left a 346-pixel jump out of 1024 running the
+     * full length of every finger, every frame. `bumpMap` differentiates the
+     * UV, so it was a hard specular line as well as a colour break.
+     *
+     * Lengthwise it is free to be fractional: nothing wraps along `v`.
+     */
+    texture.repeat.set(2, 2.2);
     skin.bumpMap = texture;
     // Small: this is pores and creases, not knuckles. Knuckles are geometry.
     skin.bumpScale = 0.0035;
@@ -105,6 +142,68 @@ export function createMaterials(tier) {
   });
 
   return { skin, sleeve, materials: [skin, sleeve] };
+}
+
+/**
+ * Rescale `u` to exactly one turn, 0..1.
+ *
+ * `CapsuleGeometry` does not produce that. It emits `-1/(2s) .. 1 + 1/(2s)`
+ * for `s` radial segments, so the span depends on the segment count — measured
+ * 1.0625 for the 16-segment wrist, 1.05 for the 20-segment palm, 1.0833 for
+ * the 12-segment fingers. Three different spans on one shared material, which
+ * is why no single `repeat` value could ever have closed the seam: whatever
+ * suits one part is wrong for the other two.
+ *
+ * Fixing it on the geometry instead makes the material's job trivial and keeps
+ * working when a segment count changes, which the next tier of this file will
+ * change again.
+ */
+function normaliseU(geometry) {
+  const uv = geometry.attributes.uv;
+  if (!uv) return geometry;
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < uv.count; i++) {
+    const u = uv.getX(i);
+    if (u < min) min = u;
+    if (u > max) max = u;
+  }
+  const span = max - min;
+  if (span <= 0) return geometry;
+  for (let i = 0; i < uv.count; i++) uv.setX(i, (uv.getX(i) - min) / span);
+  uv.needsUpdate = true;
+  return geometry;
+}
+
+/**
+ * Geometry, built once and shared by both arms.
+ *
+ * Nothing about a forearm, a wrist, a palm or a finger is side-dependent —
+ * only the thumb's placement is, and that lives on the mesh transform, not in
+ * the geometry. Building them per arm meant 24 distinct geometries on screen
+ * where 12 would do.
+ */
+const geometryCache = new Map();
+
+function shared(key, build) {
+  let geometry = geometryCache.get(key);
+  if (!geometry) {
+    geometry = normaliseU(build());
+    geometryCache.set(key, geometry);
+  }
+  return geometry;
+}
+
+/**
+ * Release the shared geometry.
+ *
+ * Only for teardown that means it — the cache is process-wide, so disposing it
+ * while a second pair of hands exists would leave that pair holding freed
+ * buffers. `FirstPersonHands.dispose` deliberately does not call this.
+ */
+export function disposeSharedGeometry() {
+  for (const geometry of geometryCache.values()) geometry.dispose();
+  geometryCache.clear();
 }
 
 /**
@@ -127,12 +226,14 @@ export function buildArm(arm, side, { skin, sleeve }, tier, PALM_Z) {
    * travelling toward the hand, where the gesture is. Rotated onto z, the
    * cylinder's +y end becomes the wrist end, so that is the thin one.
    */
-  const forearm = new Mesh(new CylinderGeometry(0.032, 0.05, 0.19, seg), sleeve);
+  const forearm = new Mesh(
+    shared(`forearm:${seg}`, () => new CylinderGeometry(0.032, 0.05, 0.19, seg)), sleeve);
   forearm.rotation.x = Math.PI / 2;
   forearm.position.z = -0.11;
   arm.add(forearm);
 
-  const wrist = new Mesh(new CapsuleGeometry(0.031, 0.035, high ? 6 : 4, high ? 16 : 8), skin);
+  const wrist = new Mesh(shared(`wrist:${tier}`,
+    () => new CapsuleGeometry(0.031, 0.035, high ? 6 : 4, high ? 16 : 8)), skin);
   wrist.rotation.x = Math.PI / 2;
   wrist.position.z = -0.235;
   arm.add(wrist);
@@ -149,8 +250,8 @@ export function buildArm(arm, side, { skin, sleeve }, tier, PALM_Z) {
    * slab for the same triangle budget.
    */
   const palm = high
-    ? new Mesh(new CapsuleGeometry(0.045, 0.052, 6, 20), skin)
-    : new Mesh(new BoxGeometry(0.098, 0.034, 0.105), skin);
+    ? new Mesh(shared('palm:high', () => new CapsuleGeometry(0.045, 0.052, 6, 20)), skin)
+    : new Mesh(shared('palm:proc', () => new BoxGeometry(0.098, 0.034, 0.105)), skin);
   if (high) {
     palm.rotation.x = Math.PI / 2;
     palm.scale.set(1.08, 1, 0.42);
@@ -170,7 +271,8 @@ export function buildArm(arm, side, { skin, sleeve }, tier, PALM_Z) {
     if (!high) {
       // Nearly palm length. At two thirds they read as knuckles, and an open
       // hand and a fist stop being different silhouettes.
-      const finger = new Mesh(new CapsuleGeometry(0.0132, 0.094, 3, 6), skin);
+      const finger = new Mesh(
+        shared('finger:proc', () => new CapsuleGeometry(0.0132, 0.094, 3, 6)), skin);
       finger.rotation.x = Math.PI / 2;
       finger.position.set(-0.036 + i * 0.024, 0, -0.052 - longer);
       finger.userData.fan = fan;
@@ -199,14 +301,16 @@ export function buildArm(arm, side, { skin, sleeve }, tier, PALM_Z) {
     finger.position.set(-0.036 + i * 0.024, 0, -0.012);
     finger.userData.fan = fan;
 
-    const proximal = new Mesh(new CapsuleGeometry(0.0135, 0.05, 4, 12), skin);
+    const proximal = new Mesh(
+      shared('proximal:high', () => new CapsuleGeometry(0.0135, 0.05, 4, FINGER_SEGMENTS)), skin);
     proximal.rotation.x = Math.PI / 2;
     proximal.position.z = -0.032 - longer * 0.5;
     finger.add(proximal);
 
     const distalPivot = new Group();
     distalPivot.position.z = -0.062 - longer;
-    const distal = new Mesh(new CapsuleGeometry(0.0118, 0.042, 4, 12), skin);
+    const distal = new Mesh(
+      shared('distal:high', () => new CapsuleGeometry(0.0118, 0.042, 4, FINGER_SEGMENTS)), skin);
     distal.rotation.x = Math.PI / 2;
     distal.position.z = -0.026;
     distalPivot.add(distal);
@@ -220,7 +324,8 @@ export function buildArm(arm, side, { skin, sleeve }, tier, PALM_Z) {
   }
   hand.add(knuckle);
 
-  const thumb = new Mesh(new CapsuleGeometry(0.015, 0.05, high ? 5 : 3, high ? 12 : 6), skin);
+  const thumb = new Mesh(shared(`thumb:${tier}`,
+    () => new CapsuleGeometry(0.015, 0.05, high ? 5 : 3, high ? FINGER_SEGMENTS : 6)), skin);
   thumb.position.set(side * -0.048, 0, -0.016);
   thumb.rotation.set(Math.PI / 2, 0, side * 0.9);
   hand.add(thumb);

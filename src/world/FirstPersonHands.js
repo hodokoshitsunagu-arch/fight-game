@@ -396,9 +396,16 @@ export class FirstPersonHands {
   dispose() {
     this.camera.remove(this.group);
     for (const material of this.materials) material.dispose();
-    for (const arm of this.hands) {
-      arm.traverse((node) => node.geometry?.dispose());
-    }
-    // Textures belong to the materials, which dispose above.
+    /*
+     * The geometry is not ours to free.
+     *
+     * It used to be — every arm built its own — and this walked the tree
+     * disposing as it went. The geometry is shared between the two arms now,
+     * and cached across every pair of hands that will ever be built, so the
+     * same walk would hand the other arm a freed buffer. `HandAssets`
+     * exports `disposeSharedGeometry` for a teardown that really means it.
+     *
+     * Textures belong to the materials, which dispose above.
+     */
   }
 }

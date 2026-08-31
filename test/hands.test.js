@@ -290,3 +290,77 @@ test('the seal keeps both hands on screen, all nine signs, portrait and desktop'
     hands.dispose();
   }
 });
+
+test('both arms share their geometry', async () => {
+  /*
+   * Nothing about a forearm, a wrist, a palm or a finger is side-dependent —
+   * only where the thumb sits, and that is a mesh transform. Building them per
+   * arm put 24 distinct geometries on screen where 6 will do, and the waste is
+   * invisible in the source because each arm's construction looks correct in
+   * isolation.
+   */
+  const { Group } = await import('three');
+  const { buildArm, createMaterials, TIER, disposeSharedGeometry } =
+    await import('../src/world/HandAssets.js');
+
+  for (const tier of [TIER.PROCEDURAL, TIER.HIGH]) {
+    disposeSharedGeometry();
+    const materials = createMaterials(tier);
+    const geometries = new Set();
+    let meshes = 0;
+    for (const side of [-1, 1]) {
+      const arm = new Group();
+      buildArm(arm, side, materials, tier, -0.31);
+      arm.traverse((node) => {
+        if (!node.geometry) return;
+        meshes++;
+        geometries.add(node.geometry.uuid);
+      });
+    }
+    assert.ok(geometries.size * 2 <= meshes,
+      `${tier}: ${meshes} meshes drawn from ${geometries.size} geometries — the pair is not sharing`);
+  }
+  disposeSharedGeometry();
+});
+
+test('u runs exactly one turn, so a whole number of tiles closes the seam', async () => {
+  /*
+   * `CapsuleGeometry` emits `-1/(2s) .. 1 + 1/(2s)`, and `s` differs between
+   * the wrist, the palm and the fingers — 1.0625, 1.05 and 1.0833 measured.
+   * Three spans on one shared material meant no `repeat` could close the seam
+   * for all of them, and the tile met itself 346 pixels out of 1024 down the
+   * length of every finger. Since `bumpMap` differentiates the UV, that was a
+   * specular line as well as a colour break.
+   */
+  const { Group } = await import('three');
+  const { buildArm, createMaterials, TIER, disposeSharedGeometry } =
+    await import('../src/world/HandAssets.js');
+
+  for (const tier of [TIER.PROCEDURAL, TIER.HIGH]) {
+    disposeSharedGeometry();
+    const arm = new Group();
+    buildArm(arm, -1, createMaterials(tier), tier, -0.31);
+    arm.traverse((node) => {
+      const uv = node.geometry?.attributes.uv;
+      if (!uv) return;
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = 0; i < uv.count; i++) {
+        const u = uv.getX(i);
+        if (u < min) min = u;
+        if (u > max) max = u;
+      }
+      assert.ok(Math.abs(min) < 1e-6 && Math.abs(max - 1) < 1e-6,
+        `${tier}: u spans ${min.toFixed(4)}..${max.toFixed(4)}, not 0..1`);
+    });
+  }
+  disposeSharedGeometry();
+});
+
+test('the high skin material compiles no clearcoat lobe', async () => {
+  // Any non-zero clearcoat defines USE_CLEARCOAT and compiles in a second
+  // specular lobe plus an IBL sample, for every fragment of both hands. It was
+  // set to 0.06, which nobody can see.
+  const { createMaterials, TIER } = await import('../src/world/HandAssets.js');
+  assert.equal(createMaterials(TIER.HIGH).skin.clearcoat, 0);
+});
