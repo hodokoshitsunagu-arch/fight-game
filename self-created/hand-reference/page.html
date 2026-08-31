@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hand Reference Drop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ground: #f5f1ec; --raised: #fffdfa; --ink: #1c1f26; --ink-soft: #6b6259;
+  --line: #ddd4c9; --line-firm: #c6b9a9; --accent: #a85f30; --accent-soft: #f0e2d5;
+  --ok: #4a7c4e; --warn: #a8622f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #14161b; --raised: #1c1f26; --ink: #e9e6e1; --ink-soft: #9a9187;
+    --line: #2c3038; --line-firm: #414751; --accent: #d98d55; --accent-soft: #2a2019;
+    --ok: #7fb083; --warn: #d98d55;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #14161b; --raised: #1c1f26; --ink: #e9e6e1; --ink-soft: #9a9187;
+  --line: #2c3038; --line-firm: #414751; --accent: #d98d55; --accent-soft: #2a2019;
+  --ok: #7fb083; --warn: #d98d55;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font-family: Newsreader, Georgia, serif; font-size: 17px; line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 720px; margin: 0 auto; padding: 48px 22px 88px;
+  display: flex; flex-direction: column; gap: 38px;
+}
+.eyebrow {
+  font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--accent); margin: 0;
+}
+h1 {
+  font-family: Archivo, 'Helvetica Neue', sans-serif; font-weight: 700;
+  font-size: clamp(30px, 6vw, 42px); line-height: 1.08; letter-spacing: -.02em;
+  margin: 10px 0 0; text-wrap: balance;
+}
+.lede { margin: 14px 0 0; max-width: 62ch; color: var(--ink-soft); }
+h2 {
+  font-family: Archivo, sans-serif; font-weight: 600; font-size: 19px;
+  letter-spacing: -.01em; margin: 0 0 4px; text-wrap: balance;
+}
+.drop {
+  border: 2px dashed var(--line-firm); border-radius: 14px; background: var(--raised);
+  padding: 40px 24px; text-align: center; transition: border-color .18s, background .18s;
+}
+.drop.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.drop__head { font-family: Archivo, sans-serif; font-weight: 600; font-size: 20px; letter-spacing: -.01em; }
+.drop__sub { margin: 8px 0 0; color: var(--ink-soft); font-size: 15px; }
+.btn {
+  display: inline-block; margin-top: 20px; padding: 13px 24px;
+  border: 1px solid var(--accent); border-radius: 8px; background: var(--accent);
+  color: var(--raised); font-family: Archivo, sans-serif; font-size: 16px;
+  font-weight: 600; cursor: pointer;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.btn[disabled] { opacity: .5; cursor: default; filter: none; }
+input[type=file] { display: none; }
+.meter {
+  margin-top: 18px; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  letter-spacing: .04em; color: var(--ink-soft); font-variant-numeric: tabular-nums;
+}
+.status {
+  margin-top: 12px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+  letter-spacing: .03em; min-height: 1.4em;
+}
+.status[data-kind="ok"] { color: var(--ok); }
+.status[data-kind="warn"] { color: var(--warn); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.shot { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--raised); }
+.shot img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; background: var(--accent-soft); }
+.shot__foot {
+  padding: 7px 9px; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.empty { border: 1px solid var(--line); border-radius: 10px; padding: 20px; color: var(--ink-soft); font-size: 15px; text-align: center; }
+.list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.item { display: grid; grid-template-columns: 148px 1fr; gap: 18px; padding: 15px 0; border-bottom: 1px solid var(--line); }
+@media (max-width: 560px) { .item { grid-template-columns: 1fr; gap: 4px; } }
+.item__name { font-family: Archivo, sans-serif; font-weight: 600; font-size: 15px; }
+.item__use {
+  display: block; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-top: 3px;
+}
+.item__what { margin: 0; color: var(--ink-soft); font-size: 15.5px; }
+.notes { border-left: 3px solid var(--accent); padding: 2px 0 2px 18px; display: flex; flex-direction: column; gap: 9px; }
+.notes p { margin: 0; font-size: 15.5px; color: var(--ink-soft); }
+.notes strong { color: var(--ink); font-weight: 500; }
+footer { color: var(--ink-soft); font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 20px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">First-person spellcasting · reference intake</p>
+    <h1>Hand Reference Drop</h1>
+    <p class="lede">
+      Photographs of your own hands, shot from your own eyeline, to replace the
+      procedural ones in the game. They land straight on the machine building it —
+      I read them from there and rebuild the poses against what you actually shot.
+    </p>
+  </header>
+
+  <section>
+    <div class="drop" id="drop">
+      <div class="drop__head">Drop photographs here</div>
+      <p class="drop__sub">JPEG, PNG or HEIC — several at a time is fine. Full resolution is welcome.</p>
+      <button class="btn" id="pick" type="button">Choose photographs</button>
+      <input type="file" id="file" accept="image/*" multiple>
+      <div class="meter" id="meter">—</div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What has landed</h2>
+    <div id="gallery"><div class="empty">Nothing yet.</div></div>
+  </section>
+
+  <section>
+    <h2>The seven poses</h2>
+    <p class="lede" style="margin-bottom:20px">
+      Each already exists in the game as an animated gesture. A photograph of the
+      same pose is what lets me correct it — the numbers came from motion
+      reference, and every one is a guess until a real hand sits next to it.
+    </p>
+    <div class="list">
+      <div class="item">
+        <div class="item__name">Hold<span class="item__use">while the mic is open</span></div>
+        <p class="item__what">Both hands raised toward the middle of your view, wrists close, fingers up and spread, palms turned away. The pose held while you speak.</p>
+      </div>
+      <div class="item">
+        <div class="item__name">Thrust<span class="item__use">frost lance · storm lance · nova beam</span></div>
+        <p class="item__what">Three frames: wound back as a loose fist, driving forward with the leading hand open, and the settle just after.</p>
+      </div>
+      <div class="item">
+        <div class="item__name">Overhead<span class="item__use">cinder fall · solar phoenix</span></div>
+        <p class="item__what">Hands raised high, then coming down through the shot. The top of the raise and the bottom of the slam.</p>
+      </div>
+      <div class="item">
+        <div class="item__name">Ground<span class="item__use">voltaic snare · glacial crown · gravity singularity · worldroot bloom</span></div>
+        <p class="item__what">Both palms turned down and pressed away from you, fingers fanned.</p>
+      </div>
+      <div class="item">
+        <div class="item__name">Sweep<span class="item__use">rift sever</span></div>
+        <p class="item__what">One arm cutting diagonally across your body while the other braces. The start and the end of the cut.</p>
+      </div>
+      <div class="item">
+        <div class="item__name">Shove<span class="item__use">force repulse</span></div>
+        <p class="item__what">Both palms out flat, pushing rather than throwing.</p>
+      </div>
+      <div class="item">
+        <div class="item__name">Gather<span class="item__use">verdant heal</span></div>
+        <p class="item__what">Hands drawing inward toward your chest — the one gesture that comes back rather than going out.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How to shoot them</h2>
+    <div class="notes">
+      <p><strong>From your own eyeline.</strong> Phone at eye height, pointing where you would be looking. Not a photograph of your hands from in front — a photograph of what you see.</p>
+      <p><strong>Both hands in frame.</strong> Even when one leads, the other is in shot and doing something. That relationship is most of what makes it read.</p>
+      <p><strong>Plain ground, even light.</strong> A wall, a floor, daylight. Hard shadows hide the finger separation, which is the thing being measured.</p>
+      <p><strong>Hold each pose still.</strong> Motion blur is fine for feeling and useless for geometry. One sharp frame per pose beats a burst.</p>
+      <p><strong>Name them if you can.</strong> A filename like <em>thrust-back</em> saves me guessing which of the seven it is.</p>
+    </div>
+  </section>
+
+  <footer>
+    This address is a temporary tunnel to the machine building the game. It stops
+    working when that session ends.
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var base = location.pathname.replace(/\/$/, '');
+  var drop = document.getElementById('drop');
+  var pick = document.getElementById('pick');
+  var file = document.getElementById('file');
+  var meter = document.getElementById('meter');
+  var status = document.getElementById('status');
+  var gallery = document.getElementById('gallery');
+  var local = [];
+
+  function say(t, kind) {
+    status.textContent = t || '';
+    if (kind) status.setAttribute('data-kind', kind); else status.removeAttribute('data-kind');
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function refresh() {
+    fetch(base + '/state').then(function (r) { return r.json(); }).then(function (s) {
+      meter.textContent = s.count + ' photograph' + (s.count === 1 ? '' : 's') +
+        ' · ' + (s.bytes / 1024 / 1024).toFixed(1) + ' MB received';
+    })['catch'](function () { meter.textContent = '—'; });
+  }
+
+  function paint() {
+    if (!local.length) { gallery.innerHTML = '<div class="empty">Nothing yet.</div>'; return; }
+    gallery.innerHTML = '<div class="grid">' + local.map(function (s) {
+      return '<figure class="shot" style="margin:0"><img src="' + s.url + '" alt="' + esc(s.name) + '">' +
+        '<figcaption class="shot__foot">' + esc(s.name) + '</figcaption></figure>';
+    }).join('') + '</div>';
+  }
+
+  function upload(f) {
+    return fetch(base + '/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': f.type || 'image/jpeg', 'X-Filename': f.name },
+      body: f
+    }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.status); });
+      return r.json();
+    });
+  }
+
+  function accept(files) {
+    var images = Array.prototype.filter.call(files || [], function (f) {
+      return /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name);
+    });
+    if (!images.length) { say('Those are not images.', 'warn'); return; }
+
+    var done = 0, failed = 0;
+    say('Sending ' + images.length + '…');
+    images.reduce(function (chain, f) {
+      return chain.then(function () {
+        return upload(f).then(function (r) {
+          done++;
+          local.unshift({ name: r.saved, url: URL.createObjectURL(f) });
+          paint();
+          say('Sent ' + done + ' of ' + images.length + '…');
+        })['catch'](function (e) {
+          failed++;
+          say(String(e.message || e), 'warn');
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      refresh();
+      if (!failed) say('Sent ' + done + ' photograph' + (done === 1 ? '' : 's') + '.', 'ok');
+      else say('Sent ' + done + ', ' + failed + ' failed.', 'warn');
+    });
+  }
+
+  pick.addEventListener('click', function () { file.click(); });
+  file.addEventListener('change', function () { accept(file.files); file.value = ''; });
+
+  ['dragenter', 'dragover'].forEach(function (t) {
+    drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('is-over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (t) {
+    drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('is-over'); });
+  });
+  drop.addEventListener('drop', function (e) { if (e.dataTransfer) accept(e.dataTransfer.files); });
+
+  refresh();
+})();
+</script>
+</body>
+</html>
