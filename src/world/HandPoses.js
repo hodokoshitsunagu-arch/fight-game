@@ -6,12 +6,14 @@
  * the evaluator that never changes. A pose tweak and a blending fix should not
  * land in the same file.
  *
- * Two references shaped this:
+ * Three references shaped this:
  *
  *   hand seals      a first-person view of somebody forming signs — hands meet
  *                   at the centre of the chest, hold, and break outward. This
  *                   is what the microphone drives: while you are speaking, the
  *                   hands are *preparing*, and the spell is the release.
+ *   the kuji-in     three stills of the nine signs, which turned the charge
+ *                   pose from one held shape into a sequence. See `SEALS`.
  *   weapon handling animation reference notable for weight rather than speed —
  *                   nothing starts instantly. Every clip here anticipates in
  *                   the opposite direction before it moves, and overshoots
@@ -42,6 +44,117 @@ const P = (pos = [0, 0, 0], rot = [0, 0, 0], curl = 0, spread = 0, wrist = [0, 0
 export const REST = P();
 
 /*
+ * Seals.
+ *
+ * The nine of the kuji-in — 临兵斗者皆阵列前行 — read off three references of
+ * the same sequence: a photographed set, a high-contrast silhouette wheel that
+ * settles what each shape reads as when it is only an outline, and a set of
+ * twelve two-hand signs shot against black that fills in what the fingers are
+ * doing underneath.
+ *
+ * It is the right vocabulary for this game and not a decoration: the kuji-in is
+ * a sequence performed *while chanting*, one sign per syllable. That is exactly
+ * what the charge pose is — the microphone is open, somebody is speaking, and
+ * the hands work through signs until the words land. So the seal is a chain,
+ * not a single held shape.
+ *
+ * The rig has a curl and a spread, not twenty joints, so an interlace is
+ * approximated: fingers laced through each other are *mostly closed and not
+ * spread*, and what separates 外缚 from 内缚 in a silhouette is how tight the
+ * fists are and how far the wrists have rolled, both of which the rig has.
+ */
+
+/**
+ * Mirror a left-hand pose onto the right.
+ *
+ * One source of truth per seal, deliberately. Hand-writing both sides is how
+ * six sign errors landed on the same axis last time — and one of them was
+ * asserted the wrong way round by its own test, so it passed alongside the bug.
+ * A seal that is symmetric cannot now disagree with itself.
+ */
+const mirror = (p) => P(
+  [-p.pos[0], p.pos[1], p.pos[2]],
+  [p.rot[0], -p.rot[1], -p.rot[2]],
+  p.curl, p.spread,
+  [p.wrist[0], -p.wrist[1], -p.wrist[2]]
+);
+
+/** A symmetric seal, written once. */
+const S = (left) => ({ left, right: mirror(left) });
+
+export const SEALS = {
+  /** 临 — 不動根本印. Palms flat together, fingers straight up and closed. */
+  rin: S(P([0.076, 0.030, 0.02], [0.48, 0.34, 0.08], 0.00, 0.00, [0.92, 0.06, 0.24])),
+
+  /** 兵 — 大金剛輪印. Laced, with the index fingers extended and crossed. */
+  pyo: S(P([0.070, 0.026, 0.02], [0.46, 0.30, 0.10], 0.42, 0.08, [0.88, 0.08, 0.20])),
+
+  /** 斗 — 外獅子印. Laced outward, thumb and index closing a ring. */
+  to: S(P([0.062, 0.020, 0.03], [0.44, 0.26, 0.14], 0.58, 0.22, [0.84, 0.10, 0.16])),
+
+  /** 者 — 内獅子印. The same lion turned inward; tighter, wrists rolled in. */
+  sha: S(P([0.058, 0.016, 0.03], [0.42, 0.24, 0.20], 0.70, 0.16, [0.82, 0.12, 0.10])),
+
+  /** 皆 — 外縛印. The outer bond: fists pressed, fingers laced outside. */
+  kai: S(P([0.052, 0.010, 0.04], [0.40, 0.20, 0.16], 0.86, 0.00, [0.76, 0.10, 0.06])),
+
+  /** 陣 — 内縛印. The inner bond, knuckles out. The tightest shape here. */
+  jin: S(P([0.050, 0.006, 0.04], [0.38, 0.18, 0.22], 0.94, 0.00, [0.74, 0.12, 0.02])),
+
+  /**
+   * 列 — 智拳印. One fist grips the other hand's raised index finger.
+   *
+   * The only asymmetric sign in the set, and worth keeping asymmetric: after
+   * eight signs that mirror, a shape where the hands are doing different things
+   * is the one the eye catches. Written out on both sides rather than mirrored,
+   * because there is nothing to mirror.
+   */
+  retsu: {
+    left:  P([0.048, -0.02, 0.03], [0.38, 0.22, 0.12], 0.92, 0.00, [0.70, 0.08, 0.10]),
+    right: P([-0.040, 0.03, 0.02], [0.50, -0.18, -0.06], 0.12, 0.00, [0.94, -0.06, -0.14])
+  },
+
+  /**
+   * 前 — 日輪印. Thumbs and index fingers close an aperture, the rest splayed.
+   *
+   * The clearest silhouette of the nine — an open triangle with light through
+   * it — which is why the hands drop and widen for it rather than staying on
+   * the centre line. It wants to be seen against the sky, not against the
+   * other hand.
+   */
+  zai: S(P([0.026, -0.01, 0.05], [0.34, 0.14, -0.10], 0.06, 1.00, [0.82, 0.04, -0.06])),
+
+  /** 行 — 隠形印. Hands cupped and closed over each other. The sequence lands. */
+  zen: S(P([0.056, -0.005, 0.05], [0.38, 0.26, 0.18], 0.76, 0.05, [0.72, 0.14, 0.12]))
+};
+
+/** The order they are performed in: 临兵斗者皆阵列前行. */
+export const KUJI = ['rin', 'pyo', 'to', 'sha', 'kai', 'jin', 'retsu', 'zai', 'zen'];
+
+/**
+ * Build a looping clip that steps through named seals.
+ *
+ * Each sign is *held* and then moved out of, rather than eased continuously
+ * from one to the next: a hand sign that is never still does not read as a
+ * sign. `hold` is the fraction of each slot spent stationary, so the shape has
+ * time to register before the hands travel to the next one.
+ */
+function chain(names, { slot = 0.5, hold = 0.62 } = {}) {
+  const duration = slot * names.length;
+  const keys = [];
+  names.forEach((name, i) => {
+    const seal = SEALS[name];
+    if (!seal) throw new Error(`unknown seal: ${name}`);
+    const start = i / names.length;
+    keys.push({ t: start, left: seal.left, right: seal.right });
+    keys.push({ t: start + hold / names.length, left: seal.left, right: seal.right });
+  });
+  // Close the loop on the first sign so the wrap is not a jump.
+  keys.push({ t: 1, left: SEALS[names[0]].left, right: SEALS[names[0]].right });
+  return { duration, loop: true, keys };
+}
+
+/*
  * Clips.
  *
  * `t` is normalised, so a clip can be retimed by changing one number rather
@@ -58,57 +171,19 @@ export const CLIPS = {
   /**
    * Held while the microphone is open.
    *
-   * Loops, because it lasts as long as somebody is talking and there is no way
-   * to know in advance how long that is. The hands come together and stay
-   * *slightly* alive — a frozen ready pose reads as the game having hung.
+   * Nine signs rather than one held shape. It loops because an utterance has
+   * no known length, and it *changes* because the reference is a sequence:
+   * whoever is chanting works through 临兵斗者皆阵列前行 while the words come
+   * out. A short word shows two or three signs, a long incantation shows all
+   * nine — which means the hands report how long you have been talking without
+   * anything having to draw a bar.
+   *
+   * Half a second a sign. Measured against the recogniser rather than chosen:
+   * a typical spell phrase runs one to three seconds, so this puts two to six
+   * signs on screen per cast, which is enough to read as a sequence and not so
+   * many that it blurs.
    */
-  seal: {
-    duration: 1.6,
-    loop: true,
-    /*
-     * Taken from the footage rather than invented.
-     *
-     * The first pass had the hands low, close together and half closed, which
-     * is a reasonable guess at "a seal" and is not what the reference does. In
-     * the video the hands come to the *centre of frame*, wrists nearly
-     * touching, fingers pointing up and spread wide, palms turned away — the
-     * backs of the hands are what the camera sees. It reads as presenting the
-     * world rather than as clutching something, which is the difference
-     * between a caster and a man holding a sandwich.
-     */
-    keys: [
-      /*
-       * `left` is the hand on the *screen's* left, resting at negative x — so
-       * moving it toward the centre is +x, not -x. Signed the other way first,
-       * which pushed both hands outward until the palms sat at ndc 1.31: off
-       * screen, during the one gesture that is supposed to be the centrepiece.
-       */
-      /*
-       * Two signs worth writing down, because both were wrong first time.
-       *
-       * `left` is the hand on the *screen's* left, resting at negative x — so
-       * moving it toward the centre is +x. Signed the other way, both palms sat
-       * at ndc 1.31: off screen, during the one gesture meant to be the
-       * centrepiece.
-       *
-       * And the wrist pitches about X, where fingers extend along -z: rotating
-       * by -θ swings them to -y. Negative points the fingers at the floor, which
-       * is exactly what it did — a downward claw where the reference has an
-       * open hand raised to the sky.
-       *
-       * The forearm pitch is the same axis and bit the same way. The rest pose
-       * sits at -0.28, which puts the hand *below* the elbow; raising the hand
-       * into frame needs a positive delta large enough to cross zero, or the
-       * forearm ends up standing in front of the hand it is attached to.
-       */
-      { t: 0.0, left: P([0.045, 0.02, 0.03], [0.52, 0.30, 0.10], 0.05, 0.85, [0.95, 0.10, 0.18]),
-                right: P([-0.045, 0.02, 0.03], [0.52, -0.30, -0.10], 0.05, 0.85, [0.95, -0.10, -0.18]) },
-      { t: 0.5, left: P([0.058, 0.035, 0.02], [0.60, 0.26, 0.12], 0.0, 1.0, [1.05, 0.08, 0.20]),
-                right: P([-0.058, 0.035, 0.02], [0.60, -0.26, -0.12], 0.0, 1.0, [1.05, -0.08, -0.20]) },
-      { t: 1.0, left: P([0.045, 0.02, 0.03], [0.52, 0.30, 0.10], 0.05, 0.85, [0.95, 0.10, 0.18]),
-                right: P([-0.045, 0.02, 0.03], [0.52, -0.30, -0.10], 0.05, 0.85, [0.95, -0.10, -0.18]) }
-    ]
-  },
+  seal: chain(KUJI, { slot: 0.5, hold: 0.62 }),
 
   /** Line casts — ice, thunder, void, beam. One hand leads, the other braces. */
   thrust: {

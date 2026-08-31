@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CLIPS, CAST_CLIPS, clipForElement, sampleClip, makeSample } from '../src/world/HandPoses.js';
+import { CLIPS, CAST_CLIPS, SEALS, KUJI, clipForElement, sampleClip, makeSample }
+  from '../src/world/HandPoses.js';
 import { ELEMENT_META } from '../src/config/settings.js';
 
 const at = (clip, t) => sampleClip(clip, t, makeSample());
@@ -94,41 +95,78 @@ test('sampling never allocates, and clamps outside its range', () => {
   assert.equal(sampleClip(CLIPS.thrust, 2, out).left.pos[2], 0, 'after the end is rest');
 });
 
-test('the wrist is its own joint, and the seal uses it', () => {
+test('the wrist is its own joint, and every seal uses it', () => {
   /*
    * Fingers pointing up while the forearm still comes in from below is a
    * wrist. Faking it by rotating the whole arm swings the elbow through the
    * frame, which is why this channel exists at all.
+   *
+   * Asserted across the whole sequence rather than at one instant. The seal
+   * used to be a single held shape and a spot check at t=0.5 was the same as
+   * checking all of it; now it is nine signs, and a spot check would only ever
+   * catch whichever sign happened to land under the sample.
    */
-  const s = at(CLIPS.seal, 0.5);
-  // Fingers run along -z; a *positive* X rotation swings them to +y. Negative
-  // points them at the floor, which is what it did until this was pinned down.
-  assert.ok(s.left.wrist[0] > 0.8, 'the seal pitches the hand up hard');
-  assert.ok(s.left.rot[0] > 0.3,
-    'and lifts the forearm past the rest pitch, so the hand clears the elbow');
+  for (const [name, seal] of Object.entries(SEALS)) {
+    for (const side of ['left', 'right']) {
+      // Fingers run along -z; a *positive* X rotation swings them to +y.
+      // Negative points them at the floor, which is what it did until this
+      // was pinned down.
+      assert.ok(seal[side].wrist[0] > 0.6, `${name}: ${side} pitches the hand up`);
+      assert.ok(seal[side].rot[0] > 0.3,
+        `${name}: ${side} lifts the forearm past the rest pitch, clearing the elbow`);
+    }
+  }
 });
 
-test('the seal presents rather than clutches', () => {
-  // Taken from the reference: hands to the centre, fingers up and spread wide,
-  // palms turned away. The first pass had them low and half closed.
-  const s = at(CLIPS.seal, 0.5);
-  assert.ok(s.left.spread > 0.9, 'fingers splayed');
-  assert.ok(s.left.curl < 0.1, 'and open, not curled');
+test('every seal brings the hands inward, never outward', () => {
   /*
-   * `left` rests at negative x, so inward is +x. The first version of this
+   * `left` rests at negative x, so inward is +x. An earlier version of this
    * assertion encoded the opposite and passed happily while the hands were
    * being pushed off screen — a test agreeing with the bug it should catch.
+   * It is checked on all nine now, because the mirror helper means one wrong
+   * sign would take every symmetric seal with it.
    */
-  assert.ok(s.left.pos[0] > 0 && s.right.pos[0] < 0,
-    'both hands travel inward, toward each other');
-  assert.ok(s.left.rot[0] > 0.3, 'and up into frame, mostly by rotation');
+  for (const [name, seal] of Object.entries(SEALS)) {
+    assert.ok(seal.left.pos[0] > 0, `${name}: the left hand travels toward centre`);
+    assert.ok(seal.right.pos[0] < 0, `${name}: the right hand travels toward centre`);
+  }
 });
 
-test('the seal is symmetric', () => {
-  const s = at(CLIPS.seal, 0.5);
-  assert.equal(s.left.pos[0], -s.right.pos[0]);
-  assert.equal(s.left.wrist[1], -s.right.wrist[1]);
-  assert.equal(s.left.curl, s.right.curl);
+test('the seal is a sequence, not a held shape', () => {
+  /*
+   * The point of the chain is that it changes. If every sign collapsed to the
+   * same numbers — a mirror bug, a bad chain builder, a table where every entry
+   * aliases one object — the clip would still play, still loop, still pass
+   * every other test here, and read on screen as a single frozen pose.
+   */
+  const shapes = new Set(
+    KUJI.map((n) => `${SEALS[n].left.curl.toFixed(2)}/${SEALS[n].left.spread.toFixed(2)}`)
+  );
+  assert.ok(shapes.size >= 7, `nine signs produce ${shapes.size} distinct hand shapes`);
+
+  // And the clip actually visits them: an open sign and a closed one, sampled
+  // where the chain says each is being held.
+  const open = at(CLIPS.seal, 0.02);           // 临 — flat palms together
+  const fist = at(CLIPS.seal, 5 / 9 + 0.03);   // 陣 — the inner bond
+  assert.ok(open.left.curl < 0.1, 'the sequence opens with an open hand');
+  assert.ok(fist.left.curl > 0.8, 'and closes to a fist partway through');
+});
+
+test('the symmetric seals mirror exactly, and 智拳印 deliberately does not', () => {
+  for (const [name, seal] of Object.entries(SEALS)) {
+    if (name === 'retsu') continue;
+    assert.equal(seal.left.pos[0], -seal.right.pos[0], `${name}: position mirrors`);
+    assert.equal(seal.left.wrist[1], -seal.right.wrist[1], `${name}: wrist mirrors`);
+    assert.equal(seal.left.curl, seal.right.curl, `${name}: both hands hold the same shape`);
+  }
+  /*
+   * 智拳印 is one fist gripping the other hand's raised index finger. After
+   * eight signs that mirror, the asymmetric one is what the eye catches — so
+   * it is asserted rather than merely exempted, or a future mirror would
+   * quietly flatten the only sign that breaks the pattern.
+   */
+  assert.ok(Math.abs(SEALS.retsu.left.curl - SEALS.retsu.right.curl) > 0.5,
+    'one hand is closed while the other stays open');
 });
 
 /* ------------------------------------------------------------- geometry */
@@ -196,4 +234,59 @@ test('the procedural tier needs no files at all', async () => {
   const { skin } = createMaterials(TIER.PROCEDURAL);
   assert.equal(skin.map, null, 'no texture to fetch, so nothing to fail');
   assert.equal(skin.type, 'MeshStandardMaterial');
+});
+
+test('the seal keeps both hands on screen, all nine signs, portrait and desktop', async () => {
+  /*
+   * The composition constant moved — 0.52 of the half-frame out to 0.41, off
+   * measured footage — and at the same time the seal stopped being one shape
+   * and became nine, one of which (日輪印) deliberately drops the hands and
+   * splays the fingers as wide as the rig goes. Either change alone is safe;
+   * together they are exactly the setup where a gesture ends up half off the
+   * edge on the aspect ratio nobody tested.
+   *
+   * So sweep the whole clip and project every fingertip. Portrait is the case
+   * that matters: a phone held upright has a horizontal field under half the
+   * desktop one, and this is the build people actually play on a phone.
+   */
+  const { PerspectiveCamera, Vector3 } = await import('three');
+  const { FirstPersonHands } = await import('../src/world/FirstPersonHands.js');
+  const { CLIPS: C } = await import('../src/world/HandPoses.js');
+
+  for (const [label, aspect] of [['desktop', 16 / 9], ['portrait', 0.46]]) {
+    const camera = new PerspectiveCamera(46, aspect, 0.1, 100);
+    const hands = new FirstPersonHands(camera);
+    hands.setVisible(true);
+    hands._clip = C.seal;
+    hands._charging = true;
+    hands._weight = 1;
+    hands._targetWeight = 1;
+
+    let worst = { x: 0, y: 0, t: 0 };
+    for (let i = 0; i <= 90; i++) {
+      const t = i / 90;
+      hands._clipTime = t;
+      hands.update(0, 0);          // dt 0, so the cursor stays where it was put
+      camera.updateMatrixWorld(true);
+
+      for (const arm of hands.hands) {
+        for (const finger of arm.userData.fingers) {
+          const [fx, fy, fz] = finger.userData.tipOffset;
+          const p = finger.userData.tipObject.localToWorld(new Vector3(fx, fy, fz));
+          p.project(camera);
+          if (Math.abs(p.x) > Math.abs(worst.x)) worst = { ...worst, x: p.x, t };
+          if (Math.abs(p.y) > Math.abs(worst.y)) worst = { ...worst, y: p.y, t };
+        }
+      }
+    }
+
+    assert.ok(Math.abs(worst.x) <= 1,
+      `${label}: fingertips stay inside the frame horizontally ` +
+      `(worst ${worst.x.toFixed(2)} at t=${worst.t.toFixed(2)})`);
+    // The bottom edge is allowed — wrists run off it, as they do in the
+    // reference, where the forearms enter from below and are cut by the frame.
+    assert.ok(worst.y <= 1,
+      `${label}: nothing rides off the top (worst ${worst.y.toFixed(2)})`);
+    hands.dispose();
+  }
 });

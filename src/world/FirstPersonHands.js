@@ -371,8 +371,22 @@ export class FirstPersonHands {
        * for a seal that brings the hands together, which was happening off the
        * bottom of the frame.
        */
+      /*
+       * 0.41, not a guess: measured off first-person reference footage of two
+       * hands held up over a pavement. Segmenting skin from stone frame by
+       * frame — the two do not overlap at all, skin runs r-g 45..55 at 29..45%
+       * saturation against 3..5 and 2..7% — and keeping only the blobs that
+       * touch the bottom edge (an arm reaches in from below; a warm paving slab
+       * in the corner does not) puts the hands' centres at ndc x -0.31 and
+       * +0.51 across 23 clean frames. Off-centre because the camera was, so the
+       * symmetric figure is the mean magnitude, 0.41.
+       *
+       * The old 0.52 was half a hand further out on each side, which is what
+       * pushed the seal's two hands apart at the moment they are supposed to
+       * meet.
+       */
       arm.userData.rest.set(
-        arm.userData.side * halfWidth * 0.52 - _palmOffset.x,
+        arm.userData.side * halfWidth * 0.41 - _palmOffset.x,
         -halfHeight * 0.58 - _palmOffset.y,
         -palmDepth - _palmOffset.z
       );
