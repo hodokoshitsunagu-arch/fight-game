@@ -26,19 +26,60 @@
  */
 
 /**
+ * The five digits, thumb first, in the order the rig lays them out.
+ *
+ * Named rather than indexed at the authoring site, because `[1, 0, 1, 1, 1]`
+ * in a pose table is a puzzle and `{ index: { curl: 0 } }` is a sentence.
+ */
+export const DIGITS = Object.freeze(['thumb', 'index', 'middle', 'ring', 'little']);
+
+/** What a digit does when a pose says nothing about it: exactly what it did before. */
+const DIGIT_NEUTRAL = Object.freeze({ curl: 1, splay: 1 });
+const DIGITS_NEUTRAL = Object.freeze(DIGITS.map(() => DIGIT_NEUTRAL));
+
+/**
+ * Expand a sparse per-digit spec into a dense five-entry array.
+ *
+ * **Multipliers, not absolutes.** A pose still says `curl` once for the whole
+ * hand; a digit entry scales that hand-wide value for one finger. Which is why
+ * every existing pose in this file is unchanged by the addition — omit the
+ * argument and every digit multiplies by one.
+ *
+ * Done at module load, so `sampleClip` walks a plain array of numbers on the
+ * hot path and never sees the sparse form.
+ *
+ * This exists because the seals need it. `_shapeHand` took one `curl` for all
+ * four fingers, so 智拳印 — one fist gripping the other hand's raised index —
+ * and 日輪印 — thumb and index closing a ring while the rest splay — could not
+ * be expressed at all. They were approximated by opening or closing the whole
+ * hand, which is not what either sign is.
+ */
+function expandDigits(spec) {
+  if (!spec) return DIGITS_NEUTRAL;
+  return DIGITS.map((name) => {
+    const entry = spec[name];
+    if (!entry) return DIGIT_NEUTRAL;
+    const unknown = Object.keys(entry).filter((k) => k !== 'curl' && k !== 'splay');
+    if (unknown.length) throw new Error(`unknown digit channel: ${unknown.join(', ')}`);
+    return { curl: entry.curl ?? 1, splay: entry.splay ?? 1 };
+  });
+}
+
+/**
  * @param {number[]} pos metres, camera space
  * @param {number[]} rot radians, the forearm
  * @param {number} curl 0 open palm, 1 closed fist
  * @param {number} spread 0 fingers together, 1 splayed
  * @param {number[]} wrist radians, the hand relative to the forearm
+ * @param {object} [digits] per-digit multipliers, sparse — see below
  *
  * The wrist is separate from the forearm because a real arm has two joints and
  * the interesting gestures need both: fingers pointing up while the forearm
  * still comes in from below is a wrist, and rotating the whole arm to fake it
  * swings the elbow through the frame.
  */
-const P = (pos = [0, 0, 0], rot = [0, 0, 0], curl = 0, spread = 0, wrist = [0, 0, 0]) =>
-  ({ pos, rot, curl, spread, wrist });
+const P = (pos = [0, 0, 0], rot = [0, 0, 0], curl = 0, spread = 0, wrist = [0, 0, 0],
+  digits = null) => ({ pos, rot, curl, spread, wrist, digits: expandDigits(digits) });
 
 /** Rest, so a keyframe can say "back to neutral" without repeating zeroes. */
 export const REST = P();
@@ -72,12 +113,24 @@ export const REST = P();
  * asserted the wrong way round by its own test, so it passed alongside the bug.
  * A seal that is symmetric cannot now disagree with itself.
  */
-const mirror = (p) => P(
-  [-p.pos[0], p.pos[1], p.pos[2]],
-  [p.rot[0], -p.rot[1], -p.rot[2]],
-  p.curl, p.spread,
-  [p.wrist[0], -p.wrist[1], -p.wrist[2]]
-);
+const mirror = (p) => {
+  const q = P(
+    [-p.pos[0], p.pos[1], p.pos[2]],
+    [p.rot[0], -p.rot[1], -p.rot[2]],
+    p.curl, p.spread,
+    [p.wrist[0], -p.wrist[1], -p.wrist[2]]
+  );
+  /*
+   * The digits are *not* mirrored, and not reordered either.
+   *
+   * Both hands index thumb-first, and the mirror of "the index finger stays
+   * straight" is "the index finger stays straight" — same digit, same value.
+   * Negating here, or reversing the array, would have the left hand extend its
+   * little finger while the right extends its index.
+   */
+  q.digits = p.digits;
+  return q;
+};
 
 /** A symmetric seal, written once. */
 const S = (left) => ({ left, right: mirror(left) });
@@ -86,11 +139,29 @@ export const SEALS = {
   /** 临 — 不動根本印. Palms flat together, fingers straight up and closed. */
   rin: S(P([0.076, 0.030, 0.02], [0.48, 0.34, 0.08], 0.00, 0.00, [0.92, 0.06, 0.24])),
 
-  /** 兵 — 大金剛輪印. Laced, with the index fingers extended and crossed. */
-  pyo: S(P([0.070, 0.026, 0.02], [0.46, 0.30, 0.10], 0.42, 0.08, [0.88, 0.08, 0.20])),
+  /**
+   * 兵 — 大金剛輪印. The middle fingers stand straight up and meet; everything
+   * else laces below them.
+   *
+   * The base curl is 0.85 now, not 0.42. 0.42 was a compromise: with one curl
+   * for the whole hand, closing the laced fingers properly would have closed
+   * the standing ones too, so both ended up half way and the sign read as a
+   * vague clasp. They can disagree now, so each goes where the reference puts
+   * it.
+   */
+  pyo: S(P([0.070, 0.026, 0.02], [0.46, 0.30, 0.10], 0.85, 0.06, [0.88, 0.08, 0.20],
+    { middle: { curl: 0.08, splay: 0.2 }, thumb: { curl: 0.5 } })),
 
-  /** 斗 — 外獅子印. Laced outward, thumb and index closing a ring. */
-  to: S(P([0.062, 0.020, 0.03], [0.44, 0.26, 0.14], 0.58, 0.22, [0.84, 0.10, 0.16])),
+  /**
+   * 斗 — 外獅子印. The index fingers rise to a point; the rest lace outward
+   * underneath and the thumbs press together.
+   *
+   * Same story as 兵 — the base curl goes to 0.82 because the laced fingers
+   * really are closed, and the index is exempted rather than the whole hand
+   * being held half open to accommodate it.
+   */
+  to: S(P([0.062, 0.020, 0.03], [0.44, 0.26, 0.14], 0.82, 0.18, [0.84, 0.10, 0.16],
+    { index: { curl: 0.08, splay: 0.25 }, thumb: { curl: 0.45 } })),
 
   /** 者 — 内獅子印. The same lion turned inward; tighter, wrists rolled in. */
   sha: S(P([0.058, 0.016, 0.03], [0.42, 0.24, 0.20], 0.70, 0.16, [0.82, 0.12, 0.10])),
@@ -110,8 +181,16 @@ export const SEALS = {
    * because there is nothing to mirror.
    */
   retsu: {
-    left:  P([0.048, -0.02, 0.03], [0.38, 0.22, 0.12], 0.92, 0.00, [0.70, 0.08, 0.10]),
-    right: P([-0.040, 0.03, 0.02], [0.50, -0.18, -0.06], 0.12, 0.00, [0.94, -0.06, -0.14])
+    left:  P([0.048, -0.02, 0.03], [0.38, 0.22, 0.12], 0.92, 0.00, [0.70, 0.08, 0.10],
+      // The gripping hand closes fully, thumb included — it is wrapped around
+      // the other hand's finger, not resting alongside it.
+      { thumb: { curl: 1.05 } }),
+    right: P([-0.040, 0.03, 0.02], [0.50, -0.18, -0.06], 0.80, 0.00, [0.94, -0.06, -0.14],
+      // ...and the gripped hand is a fist with one finger out of it. Before the
+      // digit channel existed this was written as curl 0.12 — the whole hand
+      // nearly open — because a raised index and three closed fingers could not
+      // both be said. That read as two open hands touching, not as 智拳印.
+      { index: { curl: 0.06 }, thumb: { curl: 0.9 } })
   },
 
   /**
@@ -122,7 +201,14 @@ export const SEALS = {
    * the centre line. It wants to be seen against the sky, not against the
    * other hand.
    */
-  zai: S(P([0.026, -0.01, 0.05], [0.34, 0.14, -0.10], 0.06, 1.00, [0.82, 0.04, -0.06])),
+  zai: S(P([0.026, -0.01, 0.05], [0.34, 0.14, -0.10], 0.06, 1.00, [0.82, 0.04, -0.06],
+    /*
+     * The aperture is the whole sign: thumb and index bend to meet, the other
+     * three stay straight and splayed so the triangle has an outline. A single
+     * hand-wide curl bends all four equally, which closes the triangle it is
+     * supposed to open.
+     */
+    { thumb: { curl: 5.0, splay: 0.3 }, index: { curl: 4.2, splay: 0.4 } })),
 
   /** 行 — 隠形印. Hands cupped and closed over each other. The sequence lands. */
   zen: S(P([0.056, -0.005, 0.05], [0.38, 0.26, 0.18], 0.76, 0.05, [0.72, 0.14, 0.12]))
@@ -345,14 +431,29 @@ export function sampleClip(clip, t, out) {
     }
     dst.curl = lerp(from.curl, to.curl, local);
     dst.spread = lerp(from.spread, to.spread, local);
+    /*
+     * Ten more lerps a side, into the scratch the caller already owns. The
+     * allocation-free contract is the reason this writes into `out` at all,
+     * and a per-frame array here would quietly break it.
+     */
+    for (let d = 0; d < dst.digits.length; d++) {
+      dst.digits[d].curl = lerp(from.digits[d].curl, to.digits[d].curl, local);
+      dst.digits[d].splay = lerp(from.digits[d].splay, to.digits[d].splay, local);
+    }
   }
   return out;
 }
 
 /** A scratch pair for `sampleClip` to write into. */
 export function makeSample() {
-  return {
-    left: { pos: [0, 0, 0], rot: [0, 0, 0], curl: 0, spread: 0, wrist: [0, 0, 0] },
-    right: { pos: [0, 0, 0], rot: [0, 0, 0], curl: 0, spread: 0, wrist: [0, 0, 0] }
-  };
+  const side = () => ({
+    pos: [0, 0, 0],
+    rot: [0, 0, 0],
+    curl: 0,
+    spread: 0,
+    wrist: [0, 0, 0],
+    // Mutable, unlike the frozen neutral the poses share — this is the scratch.
+    digits: DIGITS.map(() => ({ curl: 1, splay: 1 }))
+  });
+  return { left: side(), right: side() };
 }

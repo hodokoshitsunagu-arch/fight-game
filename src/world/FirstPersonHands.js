@@ -64,6 +64,16 @@ const _palmOffset = new Vector3();
  */
 const PALM_Z = -0.31;
 
+/**
+ * What the digits do when a caller says nothing about them.
+ *
+ * Module scope and frozen, so `_shapeHand` stays callable with three arguments
+ * — which the geometry test does — and so the default costs no allocation on
+ * a path that runs twice a frame.
+ */
+const NEUTRAL = Object.freeze({ curl: 1, splay: 1 });
+const NEUTRAL_DIGITS = Object.freeze([NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL]);
+
 export class FirstPersonHands {
   constructor(camera) {
     this.camera = camera;
@@ -226,7 +236,8 @@ export class FirstPersonHands {
         active ? pose.wrist[2] * weight : 0
       );
 
-      this._shapeHand(arm, active ? pose.curl * weight : 0, active ? pose.spread * weight : 0);
+      this._shapeHand(arm, active ? pose.curl * weight : 0, active ? pose.spread * weight : 0,
+        active ? pose.digits : NEUTRAL_DIGITS);
     }
   }
 
@@ -263,7 +274,7 @@ export class FirstPersonHands {
    * Staggered along the hand rather than uniform: four fingers closing in
    * lockstep reads as a mitten, and the difference costs one multiply.
    */
-  _shapeHand(arm, curl, spread) {
+  _shapeHand(arm, curl, spread, digits = NEUTRAL_DIGITS) {
     const knuckle = arm.userData.knuckle;
     // Toward the palm is -y, here as everywhere else on this axis.
     knuckle.rotation.x = -curl * 1.15;
@@ -272,6 +283,15 @@ export class FirstPersonHands {
     for (let i = 0; i < fingers.length; i++) {
       const finger = fingers[i];
       const lag = 1 + (i - 1.5) * 0.09;
+      /*
+       * `fingers` is index..little; `digits` is thumb-first, so the thumb is
+       * entry 0 and this finger is i + 1. Off by one here would have every
+       * finger wearing its neighbour's multiplier, which reads as a slightly
+       * wrong hand rather than as a bug.
+       */
+      const digit = digits[i + 1] ?? NEUTRAL;
+      const fingerCurl = curl * digit.curl;
+      const fingerSpread = spread * digit.splay;
       const distal = finger.userData.distal;
       if (distal) {
         /*
@@ -285,21 +305,22 @@ export class FirstPersonHands {
         // ~145 degrees across the two joints at full curl. Less than this and
         // a fist seen from the back of the hand is just a slightly shorter
         // open hand.
-        finger.rotation.x = -curl * 1.05 * lag;
-        distal.rotation.x = -curl * 1.45 * lag;
+        finger.rotation.x = -fingerCurl * 1.05 * lag;
+        distal.rotation.x = -fingerCurl * 1.45 * lag;
       } else {
         // One capsule, already lying along -z, so the rest pitch is baked in —
         // and the curl subtracts from it, for the same reason the two-jointed
         // version does: toward the palm is -y. This was adding, which bent the
         // fingers back over the knuckles.
-        finger.rotation.x = Math.PI / 2 - curl * 1.15 * lag;
+        finger.rotation.x = Math.PI / 2 - fingerCurl * 1.15 * lag;
       }
-      finger.rotation.y = finger.userData.fan * spread;
+      finger.rotation.y = finger.userData.fan * fingerSpread;
     }
 
     const side = arm.userData.side;
-    arm.userData.thumb.rotation.z = side * (0.9 - curl * 0.55);
-    arm.userData.thumb.rotation.x = Math.PI / 2 + curl * 0.3;
+    const thumbCurl = curl * (digits[0] ?? NEUTRAL).curl;
+    arm.userData.thumb.rotation.z = side * (0.9 - thumbCurl * 0.55);
+    arm.userData.thumb.rotation.x = Math.PI / 2 + thumbCurl * 0.3;
   }
 
   /**

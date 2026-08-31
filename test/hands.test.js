@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CLIPS, CAST_CLIPS, SEALS, KUJI, clipForElement, sampleClip, makeSample }
+import { CLIPS, CAST_CLIPS, SEALS, KUJI, DIGITS, clipForElement, sampleClip, makeSample }
   from '../src/world/HandPoses.js';
 import { ELEMENT_META } from '../src/config/settings.js';
 
@@ -164,9 +164,20 @@ test('the symmetric seals mirror exactly, and 智拳印 deliberately does not', 
    * eight signs that mirror, the asymmetric one is what the eye catches — so
    * it is asserted rather than merely exempted, or a future mirror would
    * quietly flatten the only sign that breaks the pattern.
+   *
+   * Asserted on the *effective* per-digit curl, which is where the asymmetry
+   * actually lives now. It used to be a hand-wide difference — left 0.92
+   * against right 0.12 — but that said "one fist and one open hand", and the
+   * sign is one fist and a fist with a single finger out of it. Both hands are
+   * closed; only the right index is not.
    */
-  assert.ok(Math.abs(SEALS.retsu.left.curl - SEALS.retsu.right.curl) > 0.5,
-    'one hand is closed while the other stays open');
+  const effective = (pose, digit) => pose.curl * pose.digits[DIGITS.indexOf(digit)].curl;
+  assert.ok(effective(SEALS.retsu.left, 'index') > 0.6, 'the gripping hand is closed');
+  assert.ok(effective(SEALS.retsu.right, 'index') < 0.2, 'the gripped hand raises its index');
+  for (const digit of ['middle', 'ring', 'little']) {
+    assert.ok(effective(SEALS.retsu.right, digit) > 0.6,
+      `and closes its ${digit} — it is a fist with one finger out, not an open hand`);
+  }
 });
 
 /* ------------------------------------------------------------- geometry */
@@ -363,4 +374,117 @@ test('the high skin material compiles no clearcoat lobe', async () => {
   // set to 0.06, which nobody can see.
   const { createMaterials, TIER } = await import('../src/world/HandAssets.js');
   assert.equal(createMaterials(TIER.HIGH).skin.clearcoat, 0);
+});
+
+test('a pose that says nothing about its digits behaves exactly as before', async () => {
+  /*
+   * The whole reason the digit channel is multipliers rather than absolutes.
+   * Forty-odd poses in this file predate it and none of them were touched; if
+   * the default were anything but one, every one of them would have shifted.
+   */
+  const { SEALS: S, CLIPS: C, DIGITS: D } = await import('../src/world/HandPoses.js');
+  const silent = [C.thrust, C.overhead, C.ground, C.sweep, C.shove, C.gather];
+  for (const clip of silent) {
+    for (const key of clip.keys) {
+      for (const side of ['left', 'right']) {
+        assert.equal(key[side].digits.length, D.length);
+        for (const digit of key[side].digits) {
+          assert.equal(digit.curl, 1, 'neutral curl multiplier');
+          assert.equal(digit.splay, 1, 'neutral splay multiplier');
+        }
+      }
+    }
+  }
+  // And the seals that do speak, speak about the digits they name and no others.
+  assert.equal(S.rin.left.digits[D.indexOf('index')].curl, 1);
+  assert.ok(S.zai.left.digits[D.indexOf('thumb')].curl > 1, '日輪印 bends its thumb harder');
+  assert.equal(S.zai.left.digits[D.indexOf('little')].curl, 1, 'and leaves the little finger alone');
+});
+
+test('sampling still allocates nothing, digits included', async () => {
+  const { CLIPS: C, sampleClip: sample, makeSample: scratch } =
+    await import('../src/world/HandPoses.js');
+  const out = scratch();
+  const digitsBefore = out.left.digits;
+  const entryBefore = out.left.digits[0];
+  for (let i = 0; i <= 20; i++) sample(C.seal, i / 20, out);
+  assert.equal(out.left.digits, digitsBefore, 'the digit array is reused, not rebuilt');
+  assert.equal(out.left.digits[0], entryBefore, 'and so is each entry');
+});
+
+test('mirroring a seal does not swap or negate its digits', async () => {
+  /*
+   * The mirror of "the index finger stays straight" is "the index finger stays
+   * straight" — same digit, same value. Reversing the array would have the left
+   * hand extend its little finger while the right extends its index, and that
+   * is the kind of wrongness that looks like a slightly odd hand rather than
+   * like a bug.
+   */
+  const { SEALS: S, DIGITS: D } = await import('../src/world/HandPoses.js');
+  for (const [name, seal] of Object.entries(S)) {
+    if (name === 'retsu') continue;
+    for (let d = 0; d < D.length; d++) {
+      assert.equal(seal.left.digits[d].curl, seal.right.digits[d].curl,
+        `${name}: ${D[d]} curl matches across the mirror`);
+      assert.equal(seal.left.digits[d].splay, seal.right.digits[d].splay,
+        `${name}: ${D[d]} splay matches across the mirror`);
+    }
+  }
+});
+
+test('_shapeHand bends a named finger without touching its neighbours', async () => {
+  /*
+   * The off-by-one this guards: `fingers` is index..little, `digits` is
+   * thumb-first, so the finger at i wears the digit at i+1. Getting that wrong
+   * gives every finger its neighbour's multiplier, which reads as a slightly
+   * wrong hand and not as an error.
+   */
+  const { Group, Vector3 } = await import('three');
+  const { buildArm, createMaterials, TIER, disposeSharedGeometry } =
+    await import('../src/world/HandAssets.js');
+  const { FirstPersonHands } = await import('../src/world/FirstPersonHands.js');
+  const { DIGITS: D } = await import('../src/world/HandPoses.js');
+
+  disposeSharedGeometry();
+  const arm = new Group();
+  const built = buildArm(arm, -1, createMaterials(TIER.HIGH), TIER.HIGH, -0.31);
+  arm.userData = { side: -1, ...built };
+
+  /*
+   * Tip-to-base distance, not world height.
+   *
+   * Height cannot tell these apart: `knuckle.rotation.x` is driven by the
+   * hand-wide curl, so the transverse arch stays rolled 66 degrees down in both
+   * cases, and a *straight* finger on a rolled-down arch ends up lower than a
+   * curled one that has tucked back toward the palm. Reach from the finger's
+   * own base is what "straight" actually means, and it does not care which way
+   * the hand is facing.
+   */
+  const reach = (i) => {
+    arm.updateMatrixWorld(true);
+    const finger = built.fingers[i];
+    const [x, y, z] = finger.userData.tipOffset;
+    const tip = finger.userData.tipObject.localToWorld(new Vector3(x, y, z));
+    return finger.getWorldPosition(new Vector3()).distanceTo(tip);
+  };
+
+  const shape = (digits) => FirstPersonHands.prototype._shapeHand.call({}, arm, 1, 0, digits);
+
+  const neutral = D.map(() => ({ curl: 1, splay: 1 }));
+  shape(neutral);
+  const closed = [0, 1, 2, 3].map(reach);
+
+  // Straighten the index finger only. `fingers[0]` is the index.
+  const indexOut = D.map((n) => ({ curl: n === 'index' ? 0 : 1, splay: 1 }));
+  shape(indexOut);
+  const raised = [0, 1, 2, 3].map(reach);
+
+  assert.ok(raised[0] > closed[0] + 0.01,
+    `the index reaches further when told not to curl `
+    + `(${closed[0].toFixed(3)}m -> ${raised[0].toFixed(3)}m)`);
+  for (const i of [1, 2, 3]) {
+    assert.ok(Math.abs(raised[i] - closed[i]) < 1e-9,
+      `finger ${i} does not move — it was told nothing`);
+  }
+  disposeSharedGeometry();
 });
