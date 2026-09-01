@@ -247,6 +247,60 @@ test('the procedural tier needs no files at all', async () => {
   assert.equal(skin.type, 'MeshStandardMaterial');
 });
 
+test('the seal keeps the whole mesh on screen, not only the fingertips', async () => {
+  /*
+   * The older version of this swept the same nine signs but projected only the
+   * four fingertips. That was the right test for a rig whose fingers were the
+   * only thing that moved much; it is not enough for a skinned surface, where
+   * a knuckle or the back of the palm can be the part that leaves the frame.
+   *
+   * Every eighth vertex, CPU-skinned through three's own `getVertexPosition` —
+   * the same maths the shader does — so what is measured is where the pixels
+   * actually land and not where the bones are.
+   */
+  const { PerspectiveCamera, Vector3 } = await import('three');
+  const { FirstPersonHands } = await import('../src/world/FirstPersonHands.js');
+  const { CLIPS: C } = await import('../src/world/HandPoses.js');
+
+  for (const [label, aspect] of [['desktop', 16 / 9], ['portrait', 0.46]]) {
+    const camera = new PerspectiveCamera(46, aspect, 0.1, 100);
+    const hands = new FirstPersonHands(camera);
+    hands.setVisible(true);
+    hands._clip = C.seal;
+    hands._charging = true;
+    hands._weight = 1;
+    hands._targetWeight = 1;
+
+    const meshes = [];
+    for (const arm of hands.hands) arm.traverse((n) => { if (n.isSkinnedMesh) meshes.push(n); });
+    assert.ok(meshes.length === 2, 'both hands are skinned meshes');
+
+    const point = new Vector3();
+    let worstX = 0;
+    let worstY = -Infinity;
+    for (let i = 0; i <= 30; i++) {
+      hands._clipTime = i / 30;
+      hands.update(0, 0);
+      camera.updateMatrixWorld(true);
+      for (const mesh of meshes) {
+        const count = mesh.geometry.attributes.position.count;
+        for (let v = 0; v < count; v += 8) {
+          mesh.getVertexPosition(v, point);
+          mesh.localToWorld(point).project(camera);
+          if (Math.abs(point.x) > Math.abs(worstX)) worstX = point.x;
+          if (point.y > worstY) worstY = point.y;
+        }
+      }
+    }
+    assert.ok(Math.abs(worstX) <= 1.05,
+      `${label}: the hands stay in frame horizontally (worst ${worstX.toFixed(2)})`);
+    // The bottom edge is allowed — wrists run off it, as they do in the
+    // reference, where the forearms enter from below and are cut by the frame.
+    assert.ok(worstY <= 1.05, `${label}: nothing rides off the top (worst ${worstY.toFixed(2)})`);
+    hands.dispose();
+  }
+});
+
 test('the seal keeps both hands on screen, all nine signs, portrait and desktop', async () => {
   /*
    * The composition constant moved — 0.52 of the half-frame out to 0.41, off
@@ -302,13 +356,17 @@ test('the seal keeps both hands on screen, all nine signs, portrait and desktop'
   }
 });
 
-test('both arms share their geometry', async () => {
+test('geometry is built once and reused', async () => {
   /*
-   * Nothing about a forearm, a wrist, a palm or a finger is side-dependent —
-   * only where the thumb sits, and that is a mesh transform. Building them per
-   * arm put 24 distinct geometries on screen where 6 will do, and the waste is
-   * invisible in the source because each arm's construction looks correct in
-   * isolation.
+   * Two invariants, and the second is the one with teeth.
+   *
+   * Building the same arm twice must return the *same* geometry objects — that
+   * is the cache doing its job, and the waste it prevents is invisible in the
+   * source because each arm's construction reads correctly on its own.
+   *
+   * Across the two arms, everything that is not chiral must be shared. A hand
+   * is chiral, so the high tier's swept mesh is legitimately two buffers; a
+   * forearm is not, so it had better be one.
    */
   const { Group } = await import('three');
   const { buildArm, createMaterials, TIER, disposeSharedGeometry } =
@@ -317,19 +375,26 @@ test('both arms share their geometry', async () => {
   for (const tier of [TIER.PROCEDURAL, TIER.HIGH]) {
     disposeSharedGeometry();
     const materials = createMaterials(tier);
-    const geometries = new Set();
-    let meshes = 0;
-    for (const side of [-1, 1]) {
+
+    const geometriesOf = (side) => {
       const arm = new Group();
       buildArm(arm, side, materials, tier, -0.31);
-      arm.traverse((node) => {
-        if (!node.geometry) return;
-        meshes++;
-        geometries.add(node.geometry.uuid);
-      });
-    }
-    assert.ok(geometries.size * 2 <= meshes,
-      `${tier}: ${meshes} meshes drawn from ${geometries.size} geometries — the pair is not sharing`);
+      const out = [];
+      arm.traverse((node) => { if (node.geometry) out.push(node.geometry); });
+      return out;
+    };
+
+    const first = geometriesOf(-1);
+    const again = geometriesOf(-1);
+    assert.deepEqual(again, first, `${tier}: the same side rebuilt different geometry`);
+
+    const other = geometriesOf(1);
+    const shared = other.filter((g) => first.includes(g)).length;
+    assert.ok(shared >= 1,
+      `${tier}: the two arms share nothing, not even a forearm`);
+    assert.ok(shared >= other.length - 1,
+      `${tier}: ${other.length - shared} geometries differ between the arms; `
+      + 'only the hand itself is chiral');
   }
   disposeSharedGeometry();
 });
@@ -487,4 +552,167 @@ test('_shapeHand bends a named finger without touching its neighbours', async ()
       `finger ${i} does not move — it was told nothing`);
   }
   disposeSharedGeometry();
+});
+
+/* ------------------------------------------------- the swept skinned hand */
+
+test('the swept hand is closed except where the digits enter the palm', async () => {
+  /*
+   * The palm and the five digits are separate shells sharing one skeleton, so
+   * each digit's root ring is an open boundary. Those are the *only* holes
+   * allowed, and they are only invisible while they are buried inside the palm.
+   *
+   * Edges are counted on welded positions, not on raw indices: the UV seam
+   * duplicates coincident vertices, so a raw count reports a hole down the
+   * length of every tube where there is only a texture seam.
+   */
+  const { buildRig, rootClearance } = await import('../src/world/HandRig.js');
+  const { buildSkeleton, buildHandGeometry } = await import('../src/world/HandMesh.js');
+
+  const rig = buildRig(-1);
+  const geometry = buildHandGeometry(rig, buildSkeleton(rig));
+  const position = geometry.attributes.position;
+  const index = geometry.index.array;
+
+  const key = (i) => [position.getX(i), position.getY(i), position.getZ(i)]
+    .map((v) => Math.round(v * 1e6)).join(',');
+  const canonical = new Map();
+  const weld = new Int32Array(position.count);
+  for (let i = 0; i < position.count; i++) {
+    const k = key(i);
+    if (!canonical.has(k)) canonical.set(k, i);
+    weld[i] = canonical.get(k);
+  }
+
+  const edges = new Map();
+  for (let i = 0; i < index.length; i += 3) {
+    const t = [weld[index[i]], weld[index[i + 1]], weld[index[i + 2]]];
+    // The fingertip fan collapses to a point, so its last band is degenerate.
+    if (t[0] === t[1] || t[1] === t[2] || t[2] === t[0]) continue;
+    for (const [u, v] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) {
+      const k = u < v ? `${u}_${v}` : `${v}_${u}`;
+      edges.set(k, (edges.get(k) ?? 0) + 1);
+    }
+  }
+
+  let open = 0;
+  for (const count of edges.values()) {
+    assert.ok(count <= 2, 'no edge is shared by more than two faces');
+    if (count === 1) open++;
+  }
+  // One ring of `radialSegments` edges per digit, and nothing else.
+  assert.equal(open, 32 * rig.digits.length,
+    `${open} open edges — expected exactly one root ring per digit`);
+
+  for (const digit of rig.digits) {
+    const clearance = rootClearance(rig, digit);
+    assert.ok(clearance > 0.001,
+      `${digit.name}: its root ring sits ${(clearance * 1000).toFixed(1)}mm inside the palm — `
+      + 'a hole you can see into');
+  }
+});
+
+test('the swept hand has usable normals, tangents and weights everywhere', async () => {
+  /*
+   * `USE_TANGENT` builds the entire normal-map frame from the tangent, so a
+   * tangent that is not perpendicular to the normal tilts the lighting. The
+   * palm's thenar bulge makes the radius vary with the angle, and the analytic
+   * ring tangent that ignores that came out 8 degrees off.
+   */
+  const { buildRig } = await import('../src/world/HandRig.js');
+  const { buildSkeleton, buildHandGeometry } = await import('../src/world/HandMesh.js');
+
+  const rig = buildRig(-1);
+  const geometry = buildHandGeometry(rig, buildSkeleton(rig));
+  const normal = geometry.attributes.normal;
+  const tangent = geometry.attributes.tangent;
+  const weight = geometry.attributes.skinWeight;
+
+  let worstLength = 0;
+  let worstDot = 0;
+  let worstWeight = 0;
+  for (let i = 0; i < normal.count; i++) {
+    const n = [normal.getX(i), normal.getY(i), normal.getZ(i)];
+    worstLength = Math.max(worstLength, Math.abs(Math.hypot(...n) - 1));
+    const t = [tangent.getX(i), tangent.getY(i), tangent.getZ(i)];
+    worstDot = Math.max(worstDot, Math.abs(n[0] * t[0] + n[1] * t[1] + n[2] * t[2]));
+    const sum = weight.getX(i) + weight.getY(i) + weight.getZ(i) + weight.getW(i);
+    worstWeight = Math.max(worstWeight, Math.abs(sum - 1));
+  }
+  assert.ok(worstLength < 1e-3, `normals are unit length (worst ${worstLength.toExponential(1)})`);
+  assert.ok(worstDot < 1e-4, `tangents are perpendicular (worst ${worstDot.toExponential(1)})`);
+  assert.ok(worstWeight < 1e-5, `skin weights sum to one (worst ${worstWeight.toExponential(1)})`);
+});
+
+test('a fist actually closes', async () => {
+  /*
+   * The thing the two-phalanx rig could not do. A rod pivoting at the knuckle
+   * sweeps an arc; without a middle phalanx the tip runs out of angle before it
+   * gets anywhere near the palm, so a fist was a slightly shorter open hand.
+   */
+  const { PerspectiveCamera, Vector3 } = await import('three');
+  const { FirstPersonHands } = await import('../src/world/FirstPersonHands.js');
+  const { DIGITS: D } = await import('../src/world/HandPoses.js');
+
+  const camera = new PerspectiveCamera(46, 16 / 9, 0.1, 100);
+  const hands = new FirstPersonHands(camera);
+  hands.setVisible(true);
+  const arm = hands.hands[0];
+  const neutral = D.map(() => ({ curl: 1, splay: 1 }));
+
+  const reach = () => {
+    arm.updateMatrixWorld(true);
+    const wrist = arm.userData.hand.getWorldPosition(new Vector3());
+    return arm.userData.fingers.map((finger) => {
+      const [x, y, z] = finger.userData.tipOffset;
+      return finger.userData.tipObject.localToWorld(new Vector3(x, y, z)).distanceTo(wrist);
+    });
+  };
+
+  hands._shapeHand(arm, 0, 0, neutral);
+  const open = reach();
+  hands._shapeHand(arm, 1, 0, neutral);
+  const closed = reach();
+
+  for (let i = 0; i < open.length; i++) {
+    assert.ok(closed[i] < open[i] * 0.45,
+      `finger ${i} closes to under half its open reach `
+      + `(${(open[i] * 1000).toFixed(0)}mm -> ${(closed[i] * 1000).toFixed(0)}mm)`);
+  }
+  hands.dispose();
+});
+
+test('the hands stay inside their budget', async () => {
+  /*
+   * Written so this cannot creep back. The pair used to be 24 meshes and 24
+   * distinct geometries; each of those is a draw call, twice a frame, since the
+   * hands appear in the depth prepass as well as the main pass.
+   */
+  const { PerspectiveCamera } = await import('three');
+  const { FirstPersonHands } = await import('../src/world/FirstPersonHands.js');
+  const { disposeSharedGeometry } = await import('../src/world/HandAssets.js');
+
+  disposeSharedGeometry();
+  const started = performance.now();
+  const hands = new FirstPersonHands(new PerspectiveCamera(46, 16 / 9, 0.1, 100));
+  const elapsed = performance.now() - started;
+
+  let meshes = 0;
+  let triangles = 0;
+  const geometries = new Set();
+  for (const arm of hands.hands) {
+    arm.traverse((node) => {
+      if (!node.geometry) return;
+      meshes++;
+      if (geometries.has(node.geometry)) return;
+      geometries.add(node.geometry);
+      const g = node.geometry;
+      triangles += g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+    });
+  }
+
+  assert.ok(meshes <= 4, `${meshes} draw calls for the pair — two hands and two sleeves is the budget`);
+  assert.ok(triangles <= 12000, `${triangles} triangles for the pair`);
+  assert.ok(elapsed < 120, `built in ${elapsed.toFixed(0)}ms`);
+  hands.dispose();
 });

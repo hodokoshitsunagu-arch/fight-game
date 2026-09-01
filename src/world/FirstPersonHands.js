@@ -293,21 +293,29 @@ export class FirstPersonHands {
       const fingerCurl = curl * digit.curl;
       const fingerSpread = spread * digit.splay;
       const distal = finger.userData.distal;
-      if (distal) {
+      const middle = finger.userData.middle;
+      if (middle && distal) {
         /*
-         * Two joints. A single rod rotating at the knuckle sweeps an arc and
-         * the tip never comes back toward the palm — which is what a fist is.
-         * The second joint bends harder than the first, as a real one does.
+         * Three joints, which is what a finger has.
+         *
+         * Anatomical full flexion is about 90 degrees at the knuckle, 100 at
+         * the middle joint and 70 at the last. The two-joint version could not
+         * reach the palm: a rod pivoting at the knuckle sweeps an arc, and
+         * without the middle phalanx the tip runs out of angle before it gets
+         * back to where a fist would close.
+         *
+         * Negative: fingers extend along -z and curl toward the *palm*, which
+         * is -y. Positive tips them back over the knuckles, which is how an
+         * open hand and a fist came out looking identical once already.
          */
-        // Negative: fingers extend along -z and curl toward the *palm*, which
-        // is -y. Positive tips them back over the knuckles instead, which is
-        // why an open hand and a fist came out looking identical.
-        // ~145 degrees across the two joints at full curl. Less than this and
-        // a fist seen from the back of the hand is just a slightly shorter
-        // open hand.
-        finger.rotation.x = -fingerCurl * 1.05 * lag;
-        distal.rotation.x = -fingerCurl * 1.45 * lag;
-      } else {
+        const pip = -fingerCurl * 1.75 * lag;
+        finger.rotation.x = -fingerCurl * 1.55 * lag;
+        middle.rotation.x = pip;
+        // The last joint is not independent in a real hand — it follows the
+        // middle one through the tendon. Driving it separately looks like a
+        // finger with a broken tip.
+        distal.rotation.x = pip * 0.66;
+      } else if (distal) {
         // One capsule, already lying along -z, so the rest pitch is baked in —
         // and the curl subtracts from it, for the same reason the two-jointed
         // version does: toward the palm is -y. This was adding, which bent the
@@ -315,12 +323,44 @@ export class FirstPersonHands {
         finger.rotation.x = Math.PI / 2 - fingerCurl * 1.15 * lag;
       }
       finger.rotation.y = finger.userData.fan * fingerSpread;
+
+      /*
+       * The transverse metacarpal arch.
+       *
+       * The palm is not a board. Its far edge rolls toward the thumb as the
+       * hand closes, and how far depends on the finger — the index metacarpal
+       * barely moves, the little finger's travels a long way. It is most of
+       * what separates a fist from four rods, and where the rig has no arch
+       * weight (the capsule tier) this is simply zero.
+       */
+      const arch = finger.userData.arch ?? 0;
+      finger.rotation.z = -arm.userData.side * curl * arch * 0.30;
     }
 
     const side = arm.userData.side;
+    const thumb = arm.userData.thumb;
     const thumbCurl = curl * (digits[0] ?? NEUTRAL).curl;
-    arm.userData.thumb.rotation.z = side * (0.9 - thumbCurl * 0.55);
-    arm.userData.thumb.rotation.x = Math.PI / 2 + thumbCurl * 0.3;
+    const thumbSpread = spread * (digits[0] ?? NEUTRAL).splay;
+
+    if (thumb.userData.middle) {
+      /*
+       * The thumb closes by *opposition*, not by curling like a finger: the
+       * metacarpal swings across the palm at the saddle joint and the two
+       * phalanges follow. Rotating it about the same axis as the fingers is
+       * what made the old thumb read as a fifth finger stuck on sideways.
+       *
+       * These are deltas on the rest pose the rig already set, so the saddle's
+       * own tilt stays where `HandRig` put it.
+       */
+      thumb.rotation.y = side * (0.85 - thumbCurl * 0.42 + thumbSpread * 0.16);
+      thumb.rotation.x = -0.25 - thumbCurl * 0.30;
+      thumb.userData.middle.rotation.x = -thumbCurl * 0.75;
+      thumb.userData.distal.rotation.x = -thumbCurl * 0.60;
+    } else {
+      // The capsule tier's thumb is one mesh with a baked quarter turn.
+      thumb.rotation.z = side * (0.9 - thumbCurl * 0.55);
+      thumb.rotation.x = Math.PI / 2 + thumbCurl * 0.3;
+    }
   }
 
   /**

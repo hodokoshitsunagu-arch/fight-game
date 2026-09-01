@@ -1,5 +1,6 @@
 import {
   CapsuleGeometry,
+  SkinnedMesh,
   BoxGeometry,
   CylinderGeometry,
   Group,
@@ -10,6 +11,8 @@ import {
   SRGBColorSpace,
   TextureLoader
 } from 'three';
+import { buildRig } from './HandRig.js';
+import { buildSkeleton, buildHandGeometry, makeSkeleton } from './HandMesh.js';
 
 /**
  * HandAssets.js — what the hands are made of, in two tiers.
@@ -220,6 +223,8 @@ export function buildArm(arm, side, { skin, sleeve }, tier, PALM_Z) {
   const high = tier === TIER.HIGH;
   const seg = high ? 20 : 10;
 
+  if (high) return buildSweptArm(arm, side, { skin, sleeve }, PALM_Z, seg);
+
   /*
    * Tapered, not a tube. A uniform capsule reads as a pipe; a wedge narrowing
    * into the wrist is both what an arm looks like and what keeps the eye
@@ -332,4 +337,60 @@ export function buildArm(arm, side, { skin, sleeve }, tier, PALM_Z) {
 
   arm.add(hand);
   return { hand, knuckle, fingers, thumb };
+}
+
+
+/**
+ * The high tier: one skinned surface per hand, swept over a sixteen-bone rig.
+ *
+ * Replaces twelve disjoint capsules. Not because twelve was too few triangles —
+ * 3,008 a hand is a reasonable budget — but because they were twelve *separate*
+ * primitives with an end cap buried in the next one at every joint, no taper,
+ * no webbing, and fingers 27mm across on 24mm centres, which means they
+ * overlapped and there was no gap between them to see.
+ *
+ * The geometry is cached like everything else here, so the two arms are two
+ * `SkinnedMesh` instances over one buffer — but each needs *its own* skeleton,
+ * because a skeleton is a pose and the two hands are not doing the same thing.
+ * Only the buffers are shared.
+ *
+ * The returned handles carry the names the capsule rig used, which is what lets
+ * the pose layer and its tests not know any of this happened.
+ */
+function buildSweptArm(arm, side, { skin, sleeve }, PALM_Z, seg) {
+  const forearm = new Mesh(
+    shared(`forearm:${seg}`, () => new CylinderGeometry(0.032, 0.05, 0.19, seg)), sleeve);
+  forearm.rotation.x = Math.PI / 2;
+  forearm.position.z = -0.11;
+  arm.add(forearm);
+
+  const hand = new Group();
+  hand.position.z = PALM_Z;
+
+  const rig = buildRig(side);
+  const skeleton = buildSkeleton(rig);
+
+  const geometry = shared(`hand:${side}`, () => buildHandGeometry(rig, skeleton));
+  const mesh = new SkinnedMesh(geometry, skin);
+  /*
+   * `SkinnedMesh.boundingSphere` starts null, so the first frustum test CPU
+   * skins every vertex to compute one — a one-off hitch — and then never
+   * refreshes it, so a pose that reaches outside the bind-pose sphere pops out
+   * of existence. Hands parented to the camera are always in frame; there is
+   * nothing to cull.
+   */
+  mesh.frustumCulled = false;
+  mesh.add(skeleton.root);
+  mesh.bind(makeSkeleton(skeleton));
+  hand.add(mesh);
+
+  arm.add(hand);
+
+  return {
+    hand,
+    knuckle: skeleton.knuckle,
+    fingers: skeleton.fingers,
+    thumb: skeleton.thumb,
+    mesh
+  };
 }
