@@ -716,3 +716,83 @@ test('the hands stay inside their budget', async () => {
   assert.ok(elapsed < 120, `built in ${elapsed.toFixed(0)}ms`);
   hands.dispose();
 });
+
+test('the implicit pass rounds the joins without welding the fingers', async () => {
+  /*
+   * The failure this has to avoid is the one that ruled out building the whole
+   * mesh with marching cubes, arriving by a different route: a smooth minimum
+   * reaches about `k` on either side of a join, the narrowest gap between two
+   * adjacent proximal phalanges is 1.8mm, and past roughly 2mm of blend the
+   * index and middle fingers become one shape.
+   *
+   * Vertices are attributed to a digit by their dominant bone, so this measures
+   * the surfaces themselves rather than the bones they were swept from.
+   */
+  const { Vector3 } = await import('three');
+  const { buildRig } = await import('../src/world/HandRig.js');
+  const { buildSkeleton, buildHandGeometry } = await import('../src/world/HandMesh.js');
+
+  const rig = buildRig(-1);
+  const gapsFor = (blend) => {
+    const skeleton = buildSkeleton(rig);
+    const geometry = buildHandGeometry(rig, skeleton, { blend });
+    const position = geometry.attributes.position;
+    const groups = new Map();
+    for (let i = 0; i < position.count; i++) {
+      const bone = skeleton.bones[geometry.attributes.skinIndex.getX(i)];
+      const digit = bone?.name?.split('.')[0] ?? 'wrist';
+      if (!groups.has(digit)) groups.set(digit, []);
+      groups.get(digit).push(new Vector3().fromBufferAttribute(position, i));
+    }
+    const order = ['index', 'middle', 'ring', 'little'];
+    return order.slice(0, -1).map((name, i) => {
+      const a = groups.get(name) ?? [];
+      const b = groups.get(order[i + 1]) ?? [];
+      let min = Infinity;
+      for (const p of a) for (const q of b) min = Math.min(min, p.distanceTo(q));
+      return min;
+    });
+  };
+
+  const plain = gapsFor(0);
+  const blended = gapsFor(0.0015);
+  for (let i = 0; i < plain.length; i++) {
+    assert.ok(blended[i] > 0.002,
+      `fingers ${i} and ${i + 1} stay apart (${(blended[i] * 1000).toFixed(2)}mm)`);
+    assert.ok(blended[i] <= plain[i],
+      'and the web only ever closes the gap, never opens it');
+  }
+});
+
+test('the implicit pass leaves the buried root rings buried', async () => {
+  /*
+   * A digit's root ring sits *inside* the palm, which is the only reason the
+   * mesh's only holes are invisible. It is also deep inside the field, so
+   * Newton would happily haul it out to the nearest surface and open the hole —
+   * eleven vertices were travelling the full 4mm clamp before the pass learned
+   * to leave interior vertices alone.
+   */
+  const { Vector3 } = await import('three');
+  const { buildRig } = await import('../src/world/HandRig.js');
+  const { buildSkeleton, buildHandGeometry } = await import('../src/world/HandMesh.js');
+
+  const rig = buildRig(-1);
+  const plain = buildHandGeometry(rig, buildSkeleton(rig), { blend: 0 }).attributes.position;
+  const blended = buildHandGeometry(rig, buildSkeleton(rig), { blend: 0.0015 }).attributes.position;
+
+  assert.equal(plain.count, blended.count, 'the pass moves vertices, it does not add them');
+
+  let moved = 0;
+  let worst = 0;
+  const a = new Vector3();
+  const b = new Vector3();
+  for (let i = 0; i < plain.count; i++) {
+    const d = a.fromBufferAttribute(plain, i).distanceTo(b.fromBufferAttribute(blended, i));
+    if (d > 1e-5) moved++;
+    worst = Math.max(worst, d);
+  }
+  assert.ok(worst < 0.003,
+    `no vertex is dragged more than 3mm (worst ${(worst * 1000).toFixed(2)}mm)`);
+  assert.ok(moved > 100 && moved < plain.count * 0.4,
+    `${moved} of ${plain.count} vertices move — the joins, and not much else`);
+});

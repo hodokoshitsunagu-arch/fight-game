@@ -1,5 +1,6 @@
 import { BufferGeometry, BufferAttribute, Bone, Skeleton, Vector3, Matrix4 } from 'three';
 import { PALM_STATIONS } from './HandRig.js';
+import { buildField, distance, gradient } from './HandSdf.js';
 
 /**
  * HandMesh.js — one continuous skinned surface, swept over the rig.
@@ -65,6 +66,20 @@ const CAP_RINGS = 3;
  * capsules all sharing one `repeat`, could not be.
  */
 const TILE_METRES = 0.045;
+
+/**
+ * Blend radius for the implicit pass, metres.
+ *
+ * The narrowest gap between two adjacent proximal phalanges is 1.8mm, and a
+ * smooth minimum reaches about `k` on either side of a join. Above roughly
+ * 2mm the index and middle fingers start to weld — which is the exact failure
+ * that ruled marching cubes out, arriving by a different route. 1.5mm rounds
+ * every knuckle and leaves a gap you can still see through.
+ */
+const BLEND_RADIUS = 0.0015;
+
+/** How far a vertex may be moved. A projection that wants more has gone wrong. */
+const MAX_MOVE = 0.004;
 
 const smoothstep = (t) => t * t * (3 - 2 * t);
 
@@ -460,16 +475,18 @@ function sweepPalm(buffers, rig, root, wristIndex, radialSegments) {
  * piece and stays buried. Stitching them properly is what buys webbing between
  * the fingers, and it is the next thing worth doing here.
  */
-export function buildHandGeometry(rig, skeleton, { radialSegments = RADIAL } = {}) {
+export function buildHandGeometry(rig, skeleton, { radialSegments = RADIAL, blend = BLEND_RADIUS } = {}) {
   const buffers = makeBuffers();
   const boneIndex = new Map(skeleton.bones.map((bone, i) => [bone, i]));
   const boneIndexOf = (bone) => boneIndex.get(bone) ?? 0;
   const wristIndex = boneIndexOf(skeleton.root);
 
   sweepPalm(buffers, rig, skeleton.root, wristIndex, radialSegments);
+  const digitsFrom = buffers.position.length / 3;
   for (const { chain } of skeleton.chains) {
     sweepDigit(buffers, chain, boneIndexOf, wristIndex, radialSegments);
   }
+  if (blend > 0) blendJoins(buffers, rig, skeleton, digitsFrom, blend);
 
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array(buffers.position), 3));
@@ -486,4 +503,97 @@ export function buildHandGeometry(rig, skeleton, { radialSegments = RADIAL } = {
 /** Bind the bones into a `Skeleton`, once the geometry has been swept off them. */
 export function makeSkeleton(built) {
   return new Skeleton(built.bones);
+}
+
+
+/**
+ * Push the digit vertices onto the smoothed isosurface.
+ *
+ * A sweep gives every join a crease: two tubes meeting at an angle cross, and
+ * the surface has a corner there. A smooth-minimum union has a fillet instead.
+ * So this keeps the sweep's topology, UVs, tangents and weights — everything
+ * marching cubes would have destroyed — and moves only the positions, onto a
+ * field built from the very same cones the sweep drew.
+ *
+ * Which means the two agree along the middle of every phalanx and disagree
+ * only where the interesting things are: the knuckles, the web between two
+ * fingers close enough for their cones to blend, and the flare where a digit
+ * enters the palm.
+ *
+ * Palm vertices are left alone. The field's palm is a rounded box standing in
+ * for a lofted ellipse with a thenar bulge, and projecting onto a stand-in
+ * would trade a good surface for an approximate one. It is in the field only
+ * so the digits have something to flare into.
+ *
+ * Normals come back from the field's gradient rather than from face averaging.
+ * The surface *is* the isosurface, so the gradient is exactly its normal — and
+ * `computeVertexNormals` would have averaged across the UV seam's duplicated
+ * vertices one-sidedly and drawn a lighting seam down every finger.
+ */
+function blendJoins(buffers, rig, skeleton, from, k) {
+  const field = buildField(rig, skeleton);
+  const point = new Vector3();
+  const normal = new Vector3();
+  const grad = new Vector3();
+  const tangent = new Vector3();
+
+  for (let v = from; v < buffers.position.length / 3; v++) {
+    const i = v * 3;
+    point.set(buffers.position[i], buffers.position[i + 1], buffers.position[i + 2]);
+
+    const start = distance(field, point, k);
+
+    /*
+     * Two rejections before any work, and the second one matters.
+     *
+     * Along the middle of a phalanx the sweep is *already* the isosurface —
+     * the field is built from the same cones — so two thirds of the vertices
+     * are on it to within 0.02mm and the Newton loop below runs three times to
+     * move them nowhere.
+     *
+     * And a vertex sitting well *inside* the field is buried on purpose: the
+     * digits' root rings live inside the palm, which is the only reason the
+     * mesh's only holes are invisible. Projecting one to the nearest surface
+     * drags it out into the open and unburies the hole. Eleven vertices were
+     * being hauled the full 4mm clamp before this check existed.
+     */
+    if (Math.abs(start) < 2e-5) continue;
+    if (start < -0.0008) continue;
+
+    normal.set(buffers.normal[i], buffers.normal[i + 1], buffers.normal[i + 2]);
+
+    /*
+     * Newton along the vertex's own normal. Two steps: the field is close to a
+     * true distance near the surface, so the first does nearly all of it.
+     */
+    let travel = 0;
+    for (let step = 0; step < 2; step++) {
+      const d = step === 0 ? start : distance(field, point, k);
+      gradient(field, point, k, grad);
+      const slope = grad.dot(normal);
+      if (Math.abs(slope) < 0.2) break;   // grazing: moving along the normal barely changes d
+      const move = -d / slope;
+      travel += move;
+      if (Math.abs(travel) > MAX_MOVE) break;
+      point.addScaledVector(normal, move);
+    }
+    if (Math.abs(travel) > MAX_MOVE) continue;   // leave it where the sweep put it
+
+    buffers.position[i] = point.x;
+    buffers.position[i + 1] = point.y;
+    buffers.position[i + 2] = point.z;
+
+    gradient(field, point, k, grad);
+    buffers.normal[i] = grad.x;
+    buffers.normal[i + 1] = grad.y;
+    buffers.normal[i + 2] = grad.z;
+
+    // The tangent has to follow the new normal or the normal-map frame skews.
+    const t = v * 4;
+    tangent.set(buffers.tangent[t], buffers.tangent[t + 1], buffers.tangent[t + 2]);
+    orthogonalise(tangent, grad);
+    buffers.tangent[t] = tangent.x;
+    buffers.tangent[t + 1] = tangent.y;
+    buffers.tangent[t + 2] = tangent.z;
+  }
 }

@@ -11,6 +11,7 @@ import {
   SRGBColorSpace,
   TextureLoader
 } from 'three';
+import { settings } from '../config/settings.js';
 import { buildRig } from './HandRig.js';
 import { buildSkeleton, buildHandGeometry, makeSkeleton } from './HandMesh.js';
 
@@ -370,7 +371,9 @@ function buildSweptArm(arm, side, { skin, sleeve }, PALM_Z, seg) {
   const rig = buildRig(side);
   const skeleton = buildSkeleton(rig);
 
-  const geometry = shared(`hand:${side}`, () => buildHandGeometry(rig, skeleton));
+  const blend = settings.camera.hands.blend ?? 0;
+  const geometry = shared(`hand:${side}:${blend}`,
+    () => buildHandGeometry(rig, skeleton, { blend }));
   const mesh = new SkinnedMesh(geometry, skin);
   /*
    * `SkinnedMesh.boundingSphere` starts null, so the first frustum test CPU

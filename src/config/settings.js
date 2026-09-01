@@ -2228,6 +2228,18 @@ export const settings = {
        */
       fidelity: 'high',
 
+      /*
+       * How far the implicit pass rounds the joins, metres. 0 turns it off.
+       *
+       * The sweep gives every joint a crease where two tubes cross; a
+       * smooth-minimum union gives it a fillet, and this is how wide that
+       * fillet is. It is bounded from above by anatomy rather than by taste:
+       * the narrowest gap between two adjacent proximal phalanges is 1.8mm, so
+       * much past 2mm and the index and middle fingers weld — which is the
+       * exact failure that ruled out building the whole mesh this way.
+       */
+      blend: 0.0015,
+
       blendIn: 16,      // per second, toward full weight
       blendOut: 7,      // ...and back down, deliberately slower
       // Even the worst-pronounced cast still throws a real gesture; scaling a
