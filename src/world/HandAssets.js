@@ -1,6 +1,7 @@
 import {
   CapsuleGeometry,
   SkinnedMesh,
+  Vector3,
   BoxGeometry,
   CylinderGeometry,
   Group,
@@ -14,6 +15,7 @@ import {
 import { settings } from '../config/settings.js';
 import { buildRig } from './HandRig.js';
 import { buildSkeleton, buildHandGeometry, makeSkeleton } from './HandMesh.js';
+import { retargetHand } from './HandRetarget.js';
 
 /**
  * HandAssets.js — what the hands are made of, in two tiers.
@@ -397,3 +399,61 @@ function buildSweptArm(arm, side, { skin, sleeve }, PALM_Z, seg) {
     mesh
   };
 }
+
+
+/**
+ * Load a rigged hand from a file and prepare it to be driven by our poses.
+ *
+ * Nothing ships with the build. There is no rigged human hand in the glTF
+ * sample set under a licence that allows redistribution — the skinned samples
+ * are CC-BY or under a Poser EULA, and the one CC0 skinned model is two
+ * triangles — so bundling one would mean asserting a licence I cannot verify.
+ * Point `settings.camera.hands.model` at a file you have the rights to and this
+ * takes over; leave it null and nothing changes.
+ *
+ * Resolves to `null` on any failure, and every caller treats that as "keep the
+ * hands you already have". A model that will not load must cost detail, never
+ * the hands — the same contract the textures have.
+ *
+ * @returns {Promise<{hand, knuckle, fingers, thumb}|null>}
+ */
+export async function loadHandModel(url, side, PALM_Z) {
+  if (!url || typeof document === 'undefined') return null;
+  try {
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+    const gltf = await new GLTFLoader().loadAsync(url);
+
+    const rig = retargetHand(gltf.scene, { side, fan: FAN });
+    if (!rig) return null;
+
+    const hand = new Group();
+    hand.position.z = PALM_Z;
+    hand.add(gltf.scene);
+    /*
+     * A foreign model arrives at whatever scale its author worked in, and
+     * "whatever scale" for hands is usually centimetres or Blender units. Fit
+     * it to the reach the composition was solved against rather than trusting
+     * the file: `_placeInFrustum` sizes the arm from the frustum, and it can
+     * only do that if the hand inside is the size it expects.
+     */
+    const span = rig.wrist.getWorldPosition(new Vector3())
+      .distanceTo(rig.fingers[1].userData.distal.getWorldPosition(new Vector3()));
+    if (span > 1e-4) gltf.scene.scale.setScalar(TARGET_REACH / span);
+
+    gltf.scene.traverse((node) => {
+      if (node.isSkinnedMesh) node.frustumCulled = false;
+    });
+
+    return { hand, knuckle: rig.wrist, fingers: rig.fingers, thumb: rig.thumb, model: gltf.scene };
+  } catch (error) {
+    // Deliberately quiet about the URL, which may be a signed one.
+    console.warn('[hands] model did not load; keeping the built-in hands');
+    return null;
+  }
+}
+
+/** Wrist to middle fingertip, metres — what the frustum solve is calibrated to. */
+const TARGET_REACH = 0.16;
+
+/** The resting fan per finger, carried over so `spread` opens a foreign hand too. */
+const FAN = [-0.39, -0.13, 0.13, 0.39];

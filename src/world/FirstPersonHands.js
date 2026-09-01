@@ -2,7 +2,8 @@ import { Vector3, Group } from 'three';
 import { settings } from '../config/settings.js';
 import { LAYER } from '../core/Layers.js';
 import { CLIPS, clipForElement, sampleClip, makeSample } from './HandPoses.js';
-import { TIER, createMaterials, buildArm } from './HandAssets.js';
+import { TIER, createMaterials, buildArm, loadHandModel } from './HandAssets.js';
+import { flex } from './HandRetarget.js';
 
 /**
  * FirstPersonHands.js — the two hands an unarmed caster shows you.
@@ -105,6 +106,42 @@ export class FirstPersonHands {
 
     this._sample = makeSample();
     this.setVisible(false);
+
+    /*
+     * An optional rigged hand from a file, loaded after the fact and swapped in
+     * when it arrives. Nothing waits on it: the swept hands are already built
+     * and already correct, so a slow fetch delays no frame and a failed one
+     * costs nothing. Same contract the skin textures have.
+     */
+    this._adoptModel();
+  }
+
+  async _adoptModel() {
+    const url = this.config.model;
+    if (!url) return;
+
+    /*
+     * Both hands, then swap — never one at a time.
+     *
+     * Swapping as each arrives means a failure on the second load leaves one
+     * loaded hand beside one swept one, which is worse than either on its own
+     * and looks like a rendering bug rather than a missing file.
+     */
+    const built = await Promise.all(
+      this.hands.map((arm) => loadHandModel(url, arm.userData.side, PALM_Z))
+    );
+    if (built.some((one) => !one)) return;
+
+    this.hands.forEach((arm, i) => {
+      // The swept hand goes; the sleeve stays, because a loaded hand model
+      // rarely comes with a forearm and the composition needs one.
+      arm.remove(arm.userData.hand);
+      arm.add(built[i].hand);
+      arm.userData.hand = built[i].hand;
+      arm.userData.knuckle = built[i].knuckle;
+      arm.userData.fingers = built[i].fingers;
+      arm.userData.thumb = built[i].thumb;
+    });
   }
 
   _buildArm(side, parts) {
@@ -294,7 +331,17 @@ export class FirstPersonHands {
       const fingerSpread = spread * digit.splay;
       const distal = finger.userData.distal;
       const middle = finger.userData.middle;
-      if (middle && distal) {
+      if (finger.userData.flexAxis) {
+        /*
+         * A retargeted bone from a loaded model. Its rest orientation and the
+         * axis it flexes about were derived from the model's own geometry, so
+         * the angles below are the same numbers as the swept rig's — only the
+         * axis they turn about differs, and a positive angle closes.
+         */
+        flex(finger, fingerCurl * 1.55 * lag);
+        if (middle) flex(middle, fingerCurl * 1.75 * lag);
+        if (distal && distal !== middle) flex(distal, fingerCurl * 1.15 * lag);
+      } else if (middle && distal) {
         /*
          * Three joints, which is what a finger has.
          *
@@ -322,7 +369,7 @@ export class FirstPersonHands {
         // fingers back over the knuckles.
         finger.rotation.x = Math.PI / 2 - fingerCurl * 1.15 * lag;
       }
-      finger.rotation.y = finger.userData.fan * fingerSpread;
+      if (!finger.userData.flexAxis) finger.rotation.y = finger.userData.fan * fingerSpread;
 
       /*
        * The transverse metacarpal arch.
@@ -342,7 +389,13 @@ export class FirstPersonHands {
     const thumbCurl = curl * (digits[0] ?? NEUTRAL).curl;
     const thumbSpread = spread * (digits[0] ?? NEUTRAL).splay;
 
-    if (thumb.userData.middle) {
+    if (thumb.userData.flexAxis) {
+      flex(thumb, thumbCurl * 1.10);
+      if (thumb.userData.middle) flex(thumb.userData.middle, thumbCurl * 0.75);
+      if (thumb.userData.distal && thumb.userData.distal !== thumb.userData.middle) {
+        flex(thumb.userData.distal, thumbCurl * 0.60);
+      }
+    } else if (thumb.userData.middle) {
       /*
        * The thumb closes by *opposition*, not by curling like a finger: the
        * metacarpal swings across the palm at the saddle joint and the two

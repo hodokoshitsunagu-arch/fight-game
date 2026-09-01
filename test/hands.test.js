@@ -796,3 +796,122 @@ test('the implicit pass leaves the buried root rings buried', async () => {
   assert.ok(moved > 100 && moved < plain.count * 0.4,
     `${moved} of ${plain.count} vertices move — the joins, and not much else`);
 });
+
+/* -------------------------------------------------- retargeting a model */
+
+test('bone names are read across the conventions rigs actually use', async () => {
+  const { readBoneName } = await import('../src/world/HandRetarget.js');
+  const cases = {
+    'mixamorig:LeftHandIndex2': 'index',
+    'f_middle.03.L': 'middle',
+    'thumb_01_l': 'thumb',
+    'LeftHandPinky1': 'little',
+    'RightHandPinkie3': 'little',
+    // Legacy Biped, which carries no digit word at all: digit 1 is the index.
+    'Bip01_L_Finger12': 'index',
+    'Bip01_R_Finger0': 'thumb'
+  };
+  for (const [name, digit] of Object.entries(cases)) {
+    assert.equal(readBoneName(name)?.digit, digit, name);
+  }
+  assert.equal(readBoneName('spine_02'), null, 'and nothing that is not a digit');
+});
+
+test('a foreign rig curls toward its own palm, whatever its axes are', async () => {
+  /*
+   * The reason this module exists. Every number in `HandPoses` is written
+   * against this project's conventions — bones along -z, palm at -y, a curl is
+   * a negative rotation about x. A model authored with bones along +y curls
+   * sideways if you apply those numbers to it directly.
+   *
+   * So the fixture is deliberately hostile: Mixamo names, bones running +y,
+   * palm facing -z, and a fourth tip bone per finger. Nothing about it matches
+   * what the poses assume.
+   */
+  const { Bone, Group, Vector3 } = await import('three');
+  const { retargetHand, flex } = await import('../src/world/HandRetarget.js');
+
+  const root = new Group();
+  const wrist = new Bone();
+  wrist.name = 'mixamorig:LeftHand';
+  root.add(wrist);
+
+  const chain = (digit, base, lengths) => {
+    let host = wrist;
+    let last = null;
+    lengths.forEach((length, i) => {
+      const bone = new Bone();
+      bone.name = `mixamorig:LeftHand${digit}${i + 1}`;
+      if (i === 0) bone.position.copy(base);
+      else bone.position.set(0, lengths[i - 1], 0);
+      host.add(bone);
+      host = bone;
+      last = bone;
+    });
+    // The tip bone almost every rig carries, and which used to be mistaken for
+    // the knuckle and overwrite it.
+    const tip = new Bone();
+    tip.name = `mixamorig:LeftHand${digit}4`;
+    tip.position.set(0, lengths[lengths.length - 1], 0);
+    last.add(tip);
+  };
+
+  chain('Index', new Vector3(-0.031, 0.060, 0), [0.040, 0.028, 0.021]);
+  chain('Middle', new Vector3(-0.010, 0.066, 0), [0.042, 0.029, 0.023]);
+  chain('Ring', new Vector3(0.010, 0.063, 0), [0.041, 0.028, 0.022]);
+  chain('Pinky', new Vector3(0.031, 0.056, 0), [0.032, 0.022, 0.017]);
+
+  const thumb = new Bone();
+  thumb.name = 'mixamorig:LeftHandThumb1';
+  thumb.position.set(-0.012, 0.010, -0.016);
+  wrist.add(thumb);
+  let host = thumb;
+  [0.042, 0.030, 0.024].forEach((length, i) => {
+    const bone = new Bone();
+    bone.name = `mixamorig:LeftHandThumb${i + 2}`;
+    bone.position.set(-0.018, length * 0.6, -0.012);
+    host.add(bone);
+    host = bone;
+  });
+
+  const rig = retargetHand(root, { side: -1 });
+  assert.ok(rig, 'the hand is found');
+  assert.equal(rig.fingers.length, 4);
+  for (const finger of rig.fingers) {
+    assert.ok(/1$/.test(finger.name),
+      `${finger.name} is a knuckle, not the tip bone that shares its digit's name`);
+    assert.ok(finger.userData.middle && finger.userData.distal, 'three segments');
+  }
+
+  // Bones run +y and the thumb is at -z, so the palm faces -z. Derived, not told.
+  assert.ok(rig.palm.z < -0.9,
+    `the palm direction is inferred from the model (${rig.palm.toArray().map((v) => v.toFixed(2))})`);
+
+  root.updateMatrixWorld(true);
+  const wristAt = wrist.getWorldPosition(new Vector3());
+  const tipOf = (finger) => finger.userData.distal.getWorldPosition(new Vector3());
+  const before = rig.fingers.map((f) => tipOf(f).sub(wristAt));
+
+  for (const finger of rig.fingers) {
+    flex(finger, 1.55);
+    flex(finger.userData.middle, 1.75);
+    flex(finger.userData.distal, 1.15);
+  }
+  root.updateMatrixWorld(true);
+  const after = rig.fingers.map((f) => tipOf(f).sub(wristAt));
+
+  for (let i = 0; i < before.length; i++) {
+    assert.ok(after[i].length() < before[i].length() * 0.6,
+      `finger ${i} closes (${(before[i].length() * 1000).toFixed(0)}mm -> `
+      + `${(after[i].length() * 1000).toFixed(0)}mm)`);
+    assert.ok(after[i].dot(rig.palm) > before[i].dot(rig.palm) + 0.01,
+      `finger ${i} closes toward the palm, not backwards over the knuckles`);
+  }
+});
+
+test('a missing or broken model costs detail, never the hands', async () => {
+  const { loadHandModel } = await import('../src/world/HandAssets.js');
+  assert.equal(await loadHandModel(null, -1, -0.31), null, 'no url configured');
+  assert.equal(await loadHandModel('./nope.glb', -1, -0.31), null,
+    'and a url that cannot load resolves to null rather than throwing');
+});

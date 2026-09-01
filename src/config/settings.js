@@ -2240,6 +2240,22 @@ export const settings = {
        */
       blend: 0.0015,
 
+      /*
+       * An optional rigged hand from a file — a URL to a .glb, or null.
+       *
+       * Nothing ships with the build. There is no rigged human hand in the
+       * glTF sample set under a licence that allows redistribution (the skinned
+       * samples are CC-BY or under a Poser EULA, and the one CC0 skinned model
+       * is two triangles), so bundling one would mean asserting a licence that
+       * cannot be verified from here.
+       *
+       * Point this at a model you have the rights to and `HandRetarget` works
+       * out which bones are which and, from the model's own geometry, which way
+       * each one bends — so a rig whose bones run along +y still curls toward
+       * its own palm. If it fails to load, the built-in hands stay.
+       */
+      model: null,
+
       blendIn: 16,      // per second, toward full weight
       blendOut: 7,      // ...and back down, deliberately slower
       // Even the worst-pronounced cast still throws a real gesture; scaling a
