@@ -79,4 +79,13 @@ export class AdventureEventSink {
       return false;
     }
   }
+
+  get disclosure() {
+    if (!this.enabled || !this.enabledRegions.has(this.region)) return null;
+    return {
+      fields: '局内随机 ID、内容包与版本、参与人数、案件、结局、传播方式或城市意向',
+      purpose: '汇总冒险完成、文化卡传播和下一城市意向',
+      retention: '允许列表中的原始逐局事件及其单局 run ID 无限期保留；本候选实现未声明法律批准',
+    };
+  }
 }

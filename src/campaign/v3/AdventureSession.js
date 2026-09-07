@@ -39,9 +39,14 @@ export class AdventureSession {
       navigatorParticipantId: null,
       roleAssignments: {},
       streetViewLocked: false,
+      navigationTurnCount: 0,
       submissions: [],
+      contributionSequence: 0,
+      lastContribution: null,
       availableActions: [],
       voteCounts: {},
+      evidenceDecisions: {},
+      evidenceDecisionCounts: { use: 0, skip: 0 },
       evidenceIds: [],
       selectedCaseId: null,
       navigation: { degraded: false, reason: null, fallbackId: null },
@@ -49,6 +54,7 @@ export class AdventureSession {
       lastFallback: null,
       lastResolution: null,
       endingId: null,
+      nextCityInterestId: null,
       mode: 'player',
       visitedAnchorCount: 0,
     };
@@ -81,6 +87,8 @@ export class AdventureSession {
     if (this.state.status === 'complete') return this._submitCompletionSignal(input);
     if (input?.type === 'participant-departure') return this._removeParticipant(input.participantId);
     if (input?.type === 'interaction-failure') return this._recordFailure(input.reason);
+    if (input?.type === 'navigator-command') return this._controlStreetView(input);
+    if (input?.type === 'evidence-tiebreak-decision') return this._decideEvidenceTieBreak(input);
     if (input?.type !== 'participant-submission' || this.state.status !== 'awaiting-submissions') {
       return this.getState();
     }
@@ -88,12 +96,15 @@ export class AdventureSession {
     if (!this.state.participantIds.includes(input.participantId) || !action) return this.getState();
 
     const node = this.nodes.get(this.state.nodeId);
+    if (!this.state.navigation.degraded && action.streetViewInput &&
+        !input.streetViewMatched?.includes(action.streetViewInput)) return this.getState();
     if (node.interaction.type === 'combat') {
       const role = input.role ?? action.role;
       if (action.role !== role ||
           !this.state.roleAssignments[input.participantId]?.includes(role) ||
           this.state.submissions.some((item) => item.role === role)) return this.getState();
       this.state.submissions.push({ participantId: input.participantId, actionId: action.id, role });
+      this._noteContribution(input.participantId);
       this._refreshVoteCounts();
       if (COMBAT_ROLES.every((roleId) =>
         this.state.submissions.some((submission) => submission.role === roleId))) this._completeNode();
@@ -104,6 +115,7 @@ export class AdventureSession {
       return this.getState();
     }
     this.state.submissions.push({ participantId: input.participantId, actionId: input.actionId });
+    this._noteContribution(input.participantId);
     this._refreshVoteCounts();
     if (this.state.submissions.length === this.state.participantIds.length) this._completeNode();
     return this.getState();
@@ -116,11 +128,19 @@ export class AdventureSession {
     const node = this.nodes.get(this.state.nodeId);
     this.state.pendingNavigationEffectId = null;
     this.state.navigation = result.ok
-      ? { degraded: false, reason: null, fallbackId: null }
-      : { degraded: true, reason: result.reason ?? 'navigation-failed', fallbackId: node.fallback.id };
+      ? { degraded: false, reason: null, fallbackId: null, matched: [...(result.matched ?? [])] }
+      : {
+          degraded: true,
+          reason: result.reason ?? 'navigation-failed',
+          fallbackId: node.fallback.id,
+          matched: [...(result.matched ?? [])],
+        };
     this.state.status = 'awaiting-submissions';
     this.state.availableActions = this._availableActions(node);
     this._refreshVoteCounts();
+    if (!node.safeNode && this.state.pendingDepartureIds.length) {
+      this._applyFallback('participant-departure');
+    }
     return this.getState();
   }
 
@@ -176,8 +196,11 @@ export class AdventureSession {
       this.state.pendingDepartureIds = [];
       this.state.roleAssignments = this._assignRoles(this.state.participantIds);
     }
-    const participantIndex = this.state.visitedAnchorCount % this.state.participantIds.length;
-    this.state.navigatorParticipantId = this.state.participantIds[participantIndex];
+    if (node.interaction.type !== 'combat') {
+      const participantIndex = this.state.navigationTurnCount % this.state.participantIds.length;
+      this.state.navigatorParticipantId = this.state.participantIds[participantIndex];
+      this.state.navigationTurnCount += 1;
+    }
     this.state.visitedAnchorCount += 1;
     this.state.nodeId = node.id;
     this.state.segment = node.segment;
@@ -185,8 +208,10 @@ export class AdventureSession {
     this.state.submissions = [];
     this.state.availableActions = [];
     this.state.voteCounts = {};
+    this.state.evidenceDecisions = {};
+    this.state.evidenceDecisionCounts = { use: 0, skip: 0 };
     this.state.failureCount = 0;
-    this.state.navigation = { degraded: false, reason: null, fallbackId: null };
+    this.state.navigation = { degraded: false, reason: null, fallbackId: null, matched: [] };
     this.state.streetViewLocked = node.interaction.type === 'combat';
     const effect = this._effect('navigate-street-view', {
       nodeId: node.id,
@@ -194,7 +219,29 @@ export class AdventureSession {
       navigatorParticipantId: this.state.navigatorParticipantId,
     });
     this.state.pendingNavigationEffectId = effect.id;
-    this._effect('set-street-view-lock', { locked: this.state.streetViewLocked });
+    this._effect('set-street-view-lock', {
+      locked: this.state.streetViewLocked,
+      managedNavigation: node.interaction.type !== 'combat',
+      navigatorParticipantId: this.state.navigatorParticipantId,
+    });
+  }
+
+  _noteContribution(participantId) {
+    this.state.contributionSequence += 1;
+    this.state.lastContribution = { participantId, sequence: this.state.contributionSequence };
+  }
+
+  _controlStreetView(input) {
+    const commands = new Set(['turn-left', 'turn-right', 'step-forward']);
+    if (this.state.streetViewLocked || this.state.status === 'complete' ||
+        input.participantId !== this.state.navigatorParticipantId || !commands.has(input.command)) {
+      return this.getState();
+    }
+    this._effect('control-street-view', {
+      participantId: input.participantId,
+      command: input.command,
+    });
+    return this.getState();
   }
 
   _refreshVoteCounts() {
@@ -222,6 +269,19 @@ export class AdventureSession {
     if (!this.state.participantIds.includes(this.state.navigatorParticipantId)) {
       this.state.navigatorParticipantId = this.state.participantIds[0];
     }
+    if (this.state.status === 'awaiting-evidence-tiebreak') {
+      delete this.state.evidenceDecisions[participantId];
+      const decisions = Object.values(this.state.evidenceDecisions);
+      this.state.evidenceDecisionCounts = {
+        use: decisions.filter(Boolean).length,
+        skip: decisions.filter((decision) => !decision).length,
+      };
+      if (decisions.length === this.state.participantIds.length) {
+        const { use, skip } = this.state.evidenceDecisionCounts;
+        const navigatorDecision = this.state.evidenceDecisions[this.state.navigatorParticipantId];
+        this._finalizeNode(this._resolveVoteWithPolicy(use === skip ? navigatorDecision : use > skip));
+      }
+    }
     this._refreshVoteCounts();
     if (this.state.status === 'awaiting-submissions' && node.interaction.type !== 'combat' &&
         this.state.submissions.length === this.state.participantIds.length) this._completeNode();
@@ -243,12 +303,13 @@ export class AdventureSession {
       this.state.availableActions[0];
     this.state.lastFallback = { id: node.fallback.id, reason };
     if (node.interaction.type === 'combat') {
-      this.state.submissions = COMBAT_ROLES.map((role) => ({
-        participantId: this.state.participantIds[0],
-        actionId: this.state.availableActions.find((item) => item.role === role)?.id ?? action.id,
-        role,
-        fallback: true,
-      }));
+      this.state.submissions = [];
+      this._finalizeNode({
+        winningActionId: action.id,
+        strategy: 'authored-accessibility-fallback',
+        voteCounts: Object.fromEntries(this.state.availableActions.map((item) => [item.id, 0])),
+      });
+      return;
     } else {
       this.state.submissions = this.state.participantIds.map((participantId) => ({
         participantId, actionId: action.id, fallback: true,
@@ -294,10 +355,71 @@ export class AdventureSession {
     return { winningActionId, strategy, voteCounts: Object.fromEntries(votes) };
   }
 
+  _decideEvidenceTieBreak(input) {
+    if (this.state.status !== 'awaiting-evidence-tiebreak' ||
+        !this.state.participantIds.includes(input.participantId) ||
+        typeof input.useEvidence !== 'boolean' ||
+        Object.hasOwn(this.state.evidenceDecisions, input.participantId)) return this.getState();
+    this.state.evidenceDecisions[input.participantId] = input.useEvidence;
+    this.state.evidenceDecisionCounts[input.useEvidence ? 'use' : 'skip'] += 1;
+    if (Object.keys(this.state.evidenceDecisions).length < this.state.participantIds.length) {
+      return this.getState();
+    }
+    const { use, skip } = this.state.evidenceDecisionCounts;
+    const navigatorDecision = this.state.evidenceDecisions[this.state.navigatorParticipantId];
+    const useEvidence = use === skip ? navigatorDecision : use > skip;
+    this._finalizeNode(this._resolveVoteWithPolicy(useEvidence));
+    return this.getState();
+  }
+
+  _resolveVoteWithPolicy(useEvidence) {
+    const node = this.nodes.get(this.state.nodeId);
+    const evidence = new Set(this.state.evidenceIds);
+    const actionOrder = this.state.availableActions.map((action) => action.id);
+    const votes = new Map(actionOrder.map((actionId) => [actionId, 0]));
+    for (const submission of this.state.submissions) {
+      votes.set(submission.actionId, (votes.get(submission.actionId) ?? 0) + 1);
+    }
+    const maxVotes = Math.max(...votes.values());
+    const tiedActionIds = actionOrder.filter((actionId) => votes.get(actionId) === maxVotes);
+    if (tiedActionIds.length === 1) {
+      return { winningActionId: tiedActionIds[0], strategy: 'majority', voteCounts: Object.fromEntries(votes) };
+    }
+    if (useEvidence) {
+      const supported = node.interaction.actions.filter((action) =>
+        tiedActionIds.includes(action.id) && action.tieBreakEvidenceId && evidence.has(action.tieBreakEvidenceId));
+      if (supported.length === 1) {
+        return { winningActionId: supported[0].id, strategy: 'evidence', voteCounts: Object.fromEntries(votes) };
+      }
+    }
+    const navigatorVote = this.state.submissions.find((item) =>
+      item.participantId === this.state.navigatorParticipantId && tiedActionIds.includes(item.actionId));
+    return {
+      winningActionId: navigatorVote?.actionId ?? tiedActionIds[0],
+      strategy: navigatorVote ? 'navigator' : 'authored-order',
+      voteCounts: Object.fromEntries(votes),
+    };
+  }
+
   _completeNode() {
     const node = this.nodes.get(this.state.nodeId);
     const evidence = new Set(this.state.evidenceIds);
     const resolution = this._resolveVote(node, evidence);
+    const maxVotes = Math.max(...Object.values(resolution.voteCounts));
+    const tiedCount = Object.values(resolution.voteCounts).filter((count) => count === maxVotes).length;
+    if (node.interaction.type === 'vote' && tiedCount > 1 &&
+        this.package.participantRules?.voting?.evidenceDecision === 'group') {
+      this.state.status = 'awaiting-evidence-tiebreak';
+      this.state.evidenceDecisions = {};
+      this.state.evidenceDecisionCounts = { use: 0, skip: 0 };
+      return;
+    }
+    this._finalizeNode(resolution);
+  }
+
+  _finalizeNode(resolution) {
+    const node = this.nodes.get(this.state.nodeId);
+    const evidence = new Set(this.state.evidenceIds);
     const winningAction = node.interaction.actions.find((action) =>
       action.id === resolution.winningActionId
     );
@@ -347,7 +469,8 @@ export class AdventureSession {
     if (input?.type === 'culture-card-propagation' && PROPAGATION_METHODS.has(input.method)) {
       this._event('culture-card-propagated', { ...shared, method: input.method });
     } else if (input?.type === 'city-interest' &&
-        this.package.nextCityIntentions?.includes(input.cityId)) {
+        !this.state.nextCityInterestId && this.package.nextCityIntentions?.includes(input.cityId)) {
+      this.state.nextCityInterestId = input.cityId;
       this._event('next-city-interest', { ...shared, cityId: input.cityId });
     }
     return this.getState();

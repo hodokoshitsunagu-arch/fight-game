@@ -200,6 +200,21 @@ const nodes = [
   },
 ];
 
+const streetViewInputs = {
+  S1: 'range',
+  S2: 'range',
+  S3: 'heading',
+  S4: 'range',
+  S5: 'heading',
+  S6: 'heading',
+};
+for (const node of nodes) {
+  node.interaction.actions = node.interaction.actions.map((action) => ({
+    ...action,
+    streetViewInput: streetViewInputs[node.id],
+  }));
+}
+
 const edges = [
   { from: 'S1', to: 'S2' },
   { from: 'S2', to: 'S3' },
@@ -229,9 +244,11 @@ export const NEW_YORK_SHARED_SHELL_PACKAGE = Object.freeze({
   participantRules: {
     min: 1,
     max: 4,
-    navigation: { rotation: 'per-anchor' },
+    navigation: { rotation: 'per-noncombat-anchor' },
     contributionRegions: { layout: 'shared-panorama-overlay', persistentPanels: false },
-    voting: { visibility: 'public', tieBreak: ['evidence', 'navigator'] },
+    voting: {
+      visibility: 'public', tieBreak: ['evidence', 'navigator'], evidenceDecision: 'group',
+    },
     combatRoles: ['attack', 'defense', 'evidence', 'support'],
     roleAssignments: {
       1: [['attack', 'defense', 'evidence', 'support']],
@@ -259,6 +276,7 @@ export const NEW_YORK_SHARED_SHELL_PACKAGE = Object.freeze({
     id: item.endingId,
     caseId: item.id,
     title: `${item.title} · 档案关系已恢复`,
+    caseTruth: item.truth,
     cityMystery: '本案证明失序档案通过删除并存关系来制造单线城市记忆。',
     requiresEvidence: [
       'protected-archive-layer',

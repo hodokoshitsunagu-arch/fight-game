@@ -96,8 +96,25 @@ export class StreetViewAdapter {
     }
   }
 
-  setLocked(locked) {
-    this.getStreetView?.()?.setInteractionLocked?.(locked);
+  setLocked({ locked, managedNavigation = false } = {}) {
+    this.getStreetView?.()?.setInteractionLocked?.(locked || managedNavigation);
+  }
+
+  control(effect) {
+    return this.getStreetView?.()?.applyNavigatorCommand?.(effect.command) === true;
+  }
+
+  observe(target) {
+    const view = this.getStreetView?.();
+    const survey = view?.survey?.();
+    if (!survey?.position) return { ok: false, reason: 'viewer-unavailable', matched: [] };
+    const pov = view.panorama?.getPov?.() ?? {};
+    return evaluate({ target }, {
+      position: survey.position,
+      heading: pov.heading ?? view.heading ?? survey.heading ?? 0,
+      pitch: pov.pitch ?? 0,
+      roadRelationship: target.roadRelationship,
+    });
   }
 
   async preview(target) {

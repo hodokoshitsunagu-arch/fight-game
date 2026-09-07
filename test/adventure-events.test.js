@@ -59,6 +59,8 @@ test('enabled regional event sink accepts only the versioned allowlist and prohi
   assert.equal(validateAdventureEvent({ ...VALID_EVENT, caseId: 'free text is not an id' }).ok, false);
   assert.equal(await sink.apply({ type: 'record-adventure-event', event: VALID_EVENT }), true);
   assert.deepEqual(sent, [VALID_EVENT]);
+  assert.match(sink.disclosure.fields, /局内随机 ID/);
+  assert.match(sink.disclosure.retention, /无限期保留.*未声明法律批准/);
 });
 
 test('minimal receiver is region gated and retains only an accepted event body', async () => {

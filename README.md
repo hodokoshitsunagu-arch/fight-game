@@ -117,14 +117,18 @@ run; see [`docs/plans/ten-city-cultural-campaign.md`](docs/plans/ten-city-cultur
 The development v3 URL loads the versioned New York shared-shell package. S1–S3 establish the
 archive crisis, teach the four fixed combat responsibilities and hold an informed public case vote;
 S4–S6 combine the selected case evidence and reach that case's authored conclusion. One through four
-people use the same package and one complete Street View. The navigator rotates at every anchor,
+people use the same package and one complete Street View. The navigator rotates at every non-combat
+anchor and is the only participant whose scoped controls can move the official viewer,
 participant regions appear only while input is needed, vote totals remain public, and ties resolve by
-majority, then an applicable evidence clue, then the current navigator. Combat locks Street View,
+majority, then a public group choice to apply an applicable evidence clue, then the current navigator.
+Combat locks Street View,
 uses at most two abstract anomalies and only advances by protecting, changing or producing evidence.
 For fewer than four people, responsibilities merge without AI teammates.
 
-Three failed attempts apply the authored deterministic fallback. A departure during an unsafe beat
-finishes that beat through its fallback, then reduces and reassigns the group at the next safe anchor.
+Three failed attempts apply the authored deterministic accessibility fallback without inventing role
+submissions. A departure during an unsafe beat queues the smaller group, finishes that beat through
+the same authored fallback, and reassigns responsibilities at the next safe node; it never creates an
+AI teammate.
 Only completed case, ending and culture-card discoveries enter local storage; an unfinished run is
 never restored. The candidate package still lacks the three ten-anchor case bodies and official
 Street View/cultural acceptance, so the production publication boundary deliberately excludes it.
@@ -165,9 +169,13 @@ defaults therefore make no request. Accepted records use a fresh run-only ID and
 the boundary does not deliberately retain IP addresses, full User-Agent values, free text, device IDs
 or cross-run identities. This implementation is a technical boundary, not a claim of legal approval.
 
-Rendering a culture card emits nothing. Only a successful system share or an initiated download
+The completion UI generates the culture card as a local PNG containing the case-specific truth.
+Rendering it emits nothing. Only a successful system share of that file or an initiated PNG download
 creates the propagation effect. The nine-city completion choices record intent only and never launch
-an unvalidated city. Region enablement remains a later legal and data-flow gate; production should not
+an unvalidated city, and the choices close after one selection. When an event region is enabled, the
+UI discloses the allowlisted fields, purpose and indefinite retention of raw per-run events and the
+run-only ID. Region
+enablement remains a later legal and data-flow gate; production should not
 set these variables until that review is complete:
 
 ```bash

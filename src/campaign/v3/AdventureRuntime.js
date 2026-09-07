@@ -33,7 +33,17 @@ export class AdventureRuntime {
   }
 
   async submit(input) {
-    this.session.submit(input);
+    let resolvedInput = input;
+    if (input?.type === 'participant-submission') {
+      const state = this.session.getState();
+      const node = this.package.graph.nodes.find((item) => item.id === state.nodeId);
+      const action = state.availableActions.find((item) => item.id === input.actionId);
+      if (!state.navigation.degraded && action?.streetViewInput) {
+        const observation = this.streetView?.observe?.(node.streetViewTarget);
+        resolvedInput = { ...input, streetViewMatched: observation?.matched ?? [] };
+      }
+    }
+    this.session.submit(resolvedInput);
     this._render();
     await this._applyEffects();
   }
@@ -57,12 +67,16 @@ export class AdventureRuntime {
   async _applyEffects() {
     let effects = this.session.takeEffects();
     while (effects.length) {
+      effects.sort((left, right) =>
+        Number(right.type === 'set-street-view-lock') - Number(left.type === 'set-street-view-lock'));
       for (const effect of effects) {
         if (effect.type === 'navigate-street-view') {
           const outcome = await this.streetView.navigate(effect);
           this.session.resolveEffect(outcome);
         } else if (effect.type === 'set-street-view-lock') {
-          this.streetView?.setLocked?.(effect.locked);
+          this.streetView?.setLocked?.(effect);
+        } else if (effect.type === 'control-street-view') {
+          this.streetView?.control?.(effect);
         } else if (effect.type === 'persist-discovery') {
           this.discoveryStore?.apply?.(effect, this.package);
         } else if (effect.type === 'record-adventure-event') {
@@ -85,6 +99,8 @@ export class AdventureRuntime {
       packageTitle: this.package.title,
       node,
       ending,
+      eventDisclosure: this.eventSink?.disclosure ?? null,
+      nextCityIntentions: [...(this.package.nextCityIntentions ?? [])],
       sources: this.package.sources.filter((source) => sourceIds.has(source.id)),
     });
   }

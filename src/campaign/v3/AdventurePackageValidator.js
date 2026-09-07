@@ -118,13 +118,14 @@ function participantDiagnostics(rules, { production }) {
         'participant rules must define four combat roles and 1–3 player role assignments'));
     }
     if (rules.voting?.visibility !== 'public' ||
-        JSON.stringify(rules.voting?.tieBreak) !== JSON.stringify(['evidence', 'navigator'])) {
+        JSON.stringify(rules.voting?.tieBreak) !== JSON.stringify(['evidence', 'navigator']) ||
+        rules.voting?.evidenceDecision !== 'group') {
       diagnostics.push(diagnostic('participants.voting.invalid', '$.participantRules.voting',
-        'participant rules must define public voting with evidence then navigator tie breaks'));
+        'participant rules must define public voting, group evidence choice, then navigator tie breaks'));
     }
-    if (rules.navigation?.rotation !== 'per-anchor') diagnostics.push(diagnostic(
+    if (rules.navigation?.rotation !== 'per-noncombat-anchor') diagnostics.push(diagnostic(
       'participants.navigation.invalid', '$.participantRules.navigation',
-      'participant rules must rotate the navigator at every anchor',
+      'participant rules must rotate the navigator at every non-combat anchor',
     ));
     if (rules.contributionRegions?.layout !== 'shared-panorama-overlay' ||
         rules.contributionRegions?.persistentPanels !== false) diagnostics.push(diagnostic(
@@ -291,6 +292,11 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
       ));
     }
     for (const action of node.interaction?.actions ?? []) {
+      if (production && !['range', 'heading', 'pitch', 'road-relationship']
+        .includes(action.streetViewInput)) diagnostics.push(diagnostic(
+        'interaction.street-view-input.missing', `${path}.interaction.actions`,
+        `node ${node.id} action ${action.id} is not coupled to authored Street View state`,
+      ));
       if (action.selectsCaseId && !caseIds.has(action.selectsCaseId)) diagnostics.push(diagnostic(
         'reference.case.unknown', `${path}.interaction.actions`,
         `node ${node.id} action references unknown case ${action.selectsCaseId}`,
@@ -360,7 +366,8 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
     ));
   }
   for (const [index, ending] of endings.entries()) {
-    if (!ending.id || !ending.requiresEvidence?.length || !ending.cultureCard?.id) {
+    if (!ending.id || !ending.requiresEvidence?.length || !ending.cultureCard?.id ||
+        (production && !ending.caseTruth)) {
       diagnostics.push(diagnostic('ending.incomplete', `$.endings.${index}`,
         `ending ${ending.id ?? '<missing>'} is incomplete for the runtime`));
     }

@@ -167,9 +167,26 @@ export class StreetViewBackdrop {
       viewer?.setOptions?.({
         linksControl: !this.interactionLocked,
         clickToGo: !this.interactionLocked,
+        draggable: !this.interactionLocked,
+        keyboardShortcuts: !this.interactionLocked,
+        scrollwheel: false,
+        motionTracking: false,
       });
     }
     this.element.dataset.interactionLocked = String(this.interactionLocked);
+  }
+
+  applyNavigatorCommand(command) {
+    if (!this.ready || !this.panorama) return false;
+    if (command === 'step-forward') return this.stepNearest(this.heading ?? 0);
+    const delta = command === 'turn-left' ? -30 : command === 'turn-right' ? 30 : null;
+    if (delta == null) return false;
+    const pov = this.panorama.getPov?.() ?? { heading: this.heading ?? 0, pitch: 0 };
+    const heading = ((pov.heading ?? 0) + delta + 360) % 360;
+    this._heading = heading;
+    this.heading = heading;
+    this.panorama.setPov({ heading, pitch: pov.pitch ?? 0 });
+    return true;
   }
 
   /** @returns {Promise<boolean>} whether imagery is actually on screen. */

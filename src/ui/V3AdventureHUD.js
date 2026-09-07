@@ -1,3 +1,5 @@
+import { createCultureCardBlob } from './CultureCardArtifact.js';
+
 const SEGMENT_LABELS = {
   'shared-opening': '共享开场',
   case: '案件锚点',
@@ -25,14 +27,16 @@ export class V3AdventureHUD {
       <div class="v3-adventure-hud__votes" aria-label="公开票数"></div>
       <div class="v3-adventure-hud__actions"></div>
       <div class="v3-adventure-hud__completion"></div>
+      <div class="v3-adventure-hud__disclosure"></div>
       <div class="v3-adventure-hud__sources"></div>
     `;
     parent.appendChild(this.wrapper);
-    for (const name of ['eyebrow', 'title', 'status', 'fact', 'fantasy', 'prompt', 'votes', 'actions', 'completion', 'sources']) {
+    for (const name of ['eyebrow', 'title', 'status', 'fact', 'fantasy', 'prompt', 'votes', 'actions', 'completion', 'disclosure', 'sources']) {
       this[name] = this.wrapper.querySelector(`.v3-adventure-hud__${name}`);
     }
     this.onSubmit = null;
     this.state = null;
+    this.lastEchoSequence = 0;
     this._onKeyDown = (event) => this._handleKey(event);
     window.addEventListener('keydown', this._onKeyDown);
   }
@@ -56,6 +60,9 @@ export class V3AdventureHUD {
       ? '案件、结局和文化卡发现已保存在本设备；未完成局从未写入存档。'
       : node?.interaction?.prompt ?? '';
     if (state.status === 'awaiting-navigation') this.status.textContent = '正在校准街景语义目标…';
+    else if (state.status === 'awaiting-evidence-tiebreak') {
+      this.status.textContent = '案件票数平局 · 小组正在公开决定是否使用证据线索';
+    }
     else if (state.streetViewLocked) this.status.textContent = state.navigation.degraded
       ? `战斗中街景已锁定；街景不可达（${state.navigation.reason}），使用确定性回退。`
       : '战斗中街景已锁定 · 四类职责共同保护案件证据';
@@ -69,6 +76,7 @@ export class V3AdventureHUD {
     this._renderVotes(state);
     this._renderActions(state);
     this._renderCompletion(state);
+    this._renderDisclosure(state.eventDisclosure);
     this._renderSources(state.sources);
   }
 
@@ -84,6 +92,10 @@ export class V3AdventureHUD {
 
   _renderActions(state) {
     this.actions.replaceChildren();
+    if (state.status === 'awaiting-evidence-tiebreak') {
+      this._renderEvidenceTieBreak(state);
+      return;
+    }
     if (state.status !== 'awaiting-submissions') return;
     const combat = state.node?.interaction?.type === 'combat';
     for (const [index, participantId] of state.participantIds.entries()) {
@@ -96,6 +108,24 @@ export class V3AdventureHUD {
         ? `P${index + 1} · ${roles.join(' + ')}`
         : `P${index + 1}${participantId === state.navigatorParticipantId ? ' · 导航者' : ''}`;
       zone.appendChild(heading);
+
+      if (!combat && participantId === state.navigatorParticipantId) {
+        const controls = document.createElement('div');
+        controls.className = 'v3-adventure-hud__navigator-controls';
+        for (const [command, label] of [
+          ['turn-left', '左转'], ['step-forward', '前进'], ['turn-right', '右转'],
+        ]) {
+          const control = document.createElement('button');
+          control.type = 'button';
+          control.dataset.navigationControl = 'true';
+          control.textContent = label;
+          control.addEventListener('click', () => this.onSubmit?.({
+            type: 'navigator-command', participantId, command,
+          }));
+          controls.appendChild(control);
+        }
+        zone.appendChild(controls);
+      }
 
       const submitted = state.submissions.filter((item) => item.participantId === participantId);
       const actions = combat
@@ -111,8 +141,6 @@ export class V3AdventureHUD {
           ? ` · ${state.voteCounts[action.id] ?? 0} 票` : '';
         button.textContent = button.disabled ? `已贡献 · ${action.label}` : `${action.label}${votes}`;
         button.addEventListener('click', () => {
-          zone.classList.remove('has-echo');
-          requestAnimationFrame(() => zone.classList.add('has-echo'));
           this.onSubmit?.({
             type: 'participant-submission',
             participantId,
@@ -132,8 +160,13 @@ export class V3AdventureHUD {
         }));
         zone.appendChild(leave);
       }
+      if (state.lastContribution?.participantId === participantId &&
+          state.lastContribution.sequence > this.lastEchoSequence) {
+        zone.classList.add('has-echo');
+      }
       this.actions.appendChild(zone);
     }
+    this.lastEchoSequence = Math.max(this.lastEchoSequence, state.lastContribution?.sequence ?? 0);
     const fallbackButton = document.createElement('button');
     fallbackButton.type = 'button';
     fallbackButton.className = 'v3-adventure-hud__fallback';
@@ -144,16 +177,43 @@ export class V3AdventureHUD {
     this.actions.appendChild(fallbackButton);
   }
 
+  _renderEvidenceTieBreak(state) {
+    const note = document.createElement('p');
+    note.textContent = `案件票数平局。小组公开决定是否使用已发现证据：使用 ${state.evidenceDecisionCounts.use} / 不使用 ${state.evidenceDecisionCounts.skip}`;
+    this.actions.appendChild(note);
+    for (const [index, participantId] of state.participantIds.entries()) {
+      const zone = document.createElement('section');
+      zone.className = 'v3-adventure-hud__zone';
+      const heading = document.createElement('strong');
+      heading.textContent = `P${index + 1}${participantId === state.navigatorParticipantId ? ' · 导航者' : ''}`;
+      zone.appendChild(heading);
+      for (const [useEvidence, label] of [[true, '使用证据线索'], [false, '保留证据，交导航者裁决']]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.disabled = Object.hasOwn(state.evidenceDecisions, participantId);
+        button.textContent = label;
+        button.addEventListener('click', () => this.onSubmit?.({
+          type: 'evidence-tiebreak-decision', participantId, useEvidence,
+        }));
+        zone.appendChild(button);
+      }
+      this.actions.appendChild(zone);
+    }
+  }
+
   _renderCompletion(state) {
     this.completion.replaceChildren();
     if (state.status !== 'complete') return;
     const share = document.createElement('button');
     share.type = 'button';
     share.textContent = '系统分享文化卡';
-    share.disabled = !navigator.share;
+    share.disabled = !navigator.share || typeof File === 'undefined';
     share.addEventListener('click', async () => {
       try {
-        await navigator.share({ title: state.ending?.title, text: state.ending?.cityMystery });
+        const blob = await createCultureCardBlob(state.ending);
+        const file = new File([blob], `${state.endingId}-culture-card.png`, { type: 'image/png' });
+        if (navigator.canShare && !navigator.canShare({ files: [file] })) return;
+        await navigator.share({ title: state.ending?.title, files: [file] });
         await this.onSubmit?.({ type: 'culture-card-propagation', method: 'system-share-success' });
       } catch {}
     });
@@ -161,24 +221,33 @@ export class V3AdventureHUD {
     download.type = 'button';
     download.textContent = '下载文化卡';
     download.addEventListener('click', async () => {
-      const blob = new Blob([
-        `${state.ending?.title ?? '纽约文化卡'}\n${state.ending?.cityMystery ?? ''}\n`,
-      ], { type: 'text/plain;charset=utf-8' });
+      const blob = await createCultureCardBlob(state.ending);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${state.endingId}-culture-card.txt`;
+      link.download = `${state.endingId}-culture-card.png`;
       link.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
       await this.onSubmit?.({ type: 'culture-card-propagation', method: 'download-initiated' });
     });
     this.completion.append(share, download);
+    const truth = document.createElement('p');
+    truth.textContent = `案件客观谜底｜${state.ending?.caseTruth ?? ''}`;
+    const mystery = document.createElement('p');
+    mystery.textContent = `城市总谜团｜${state.ending?.cityMystery ?? ''}`;
+    this.completion.append(truth, mystery);
     const cityTitle = document.createElement('p');
     cityTitle.textContent = '还想探索哪座城市？选择只记录意向，不会进入未验证城市。';
     this.completion.appendChild(cityTitle);
+    if (state.nextCityInterestId) {
+      const selected = document.createElement('p');
+      selected.textContent = `${NEXT_CITIES[state.nextCityInterestId]} · 敬请期待。本局不会进入尚未验证的城市。`;
+      this.completion.appendChild(selected);
+      return;
+    }
     const cities = document.createElement('div');
     cities.className = 'v3-adventure-hud__cities';
-    for (const cityId of this.state.node ? Object.keys(NEXT_CITIES) : []) {
+    for (const cityId of state.nextCityIntentions ?? []) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = NEXT_CITIES[cityId];
@@ -186,6 +255,12 @@ export class V3AdventureHUD {
       cities.appendChild(button);
     }
     this.completion.appendChild(cities);
+  }
+
+  _renderDisclosure(disclosure) {
+    this.disclosure.replaceChildren();
+    if (!disclosure) return;
+    this.disclosure.textContent = `事件数据说明｜字段：${disclosure.fields}。目的：${disclosure.purpose}。保留：${disclosure.retention}。`;
   }
 
   _renderSources(sources) {
@@ -203,7 +278,8 @@ export class V3AdventureHUD {
   _handleKey(event) {
     const index = Number(event.key) - 1;
     const zone = this.actions.querySelectorAll('.v3-adventure-hud__zone')[index];
-    const button = [...(zone?.querySelectorAll('button') ?? [])].find((item) => !item.disabled);
+    const button = [...(zone?.querySelectorAll('button:not([data-navigation-control])') ?? [])]
+      .find((item) => !item.disabled);
     if (!button) return;
     event.preventDefault();
     button.click();

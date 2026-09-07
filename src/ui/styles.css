@@ -1942,6 +1942,26 @@ body.is-v3-adventure > .voice-hud {
   cursor: default;
 }
 
+.v3-adventure-hud__navigator-controls {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.v3-adventure-hud__navigator-controls button {
+  min-height: 34px;
+  border-color: rgba(120, 200, 255, .7);
+}
+
+.v3-adventure-hud__disclosure {
+  margin-top: 8px;
+  color: #a9bfd0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.v3-adventure-hud__disclosure:empty { display: none; }
+
 .v3-adventure-hud__sources {
   display: grid;
   margin-top: 12px;
