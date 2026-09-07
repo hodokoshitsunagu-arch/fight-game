@@ -23,16 +23,16 @@ export function analyzeAdventureGraph(adventurePackage) {
     pending.push(...(outgoing.get(nodeId) ?? []).map((edge) => edge.to));
   }
 
-  const canReachFinal = new Set();
+  const canReachEnding = new Set();
   const reversePending = nodes
-    .filter((node) => node.segment === 'final-reasoning')
+    .filter((node) => node.segment === 'final-reasoning' && !(outgoing.get(node.id)?.length))
     .map((node) => node.id);
   while (reversePending.length) {
     const nodeId = reversePending.pop();
-    if (canReachFinal.has(nodeId)) continue;
-    canReachFinal.add(nodeId);
+    if (canReachEnding.has(nodeId)) continue;
+    canReachEnding.add(nodeId);
     reversePending.push(...(incoming.get(nodeId) ?? []).map((edge) => edge.from));
   }
 
-  return { nodes, edges, outgoing, incoming, reachable, canReachFinal };
+  return { nodes, edges, outgoing, incoming, reachable, canReachEnding };
 }

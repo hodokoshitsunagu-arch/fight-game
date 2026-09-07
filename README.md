@@ -142,7 +142,8 @@ player assets.
 Optional AI drafting is an explicit author action. Configure the local Vite process through an
 ignored `.env` using `ADVENTURE_AI_ENDPOINT`, `ADVENTURE_AI_KEY` and `ADVENTURE_AI_MODEL`. These
 unprefixed values stay in the local server middleware and never enter the browser. The request is
-limited to a structured brief, source summaries and short author-selected references. Every result
+limited to a structured brief, source summaries and at most eight author-selected references of
+500 characters each, preventing full works from crossing the gateway. Every result
 is `unreviewed`; the author must edit and accept it before production validation can allow it.
 Automated tests use injected fake providers and never make a live or billable request.
 

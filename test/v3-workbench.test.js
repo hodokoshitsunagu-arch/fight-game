@@ -160,10 +160,11 @@ test('runtime Street View navigation evaluates pitch and reviewed road semantics
 });
 
 test('text export refuses prohibited Street View persistence fields', () => {
-  for (const key of ['panorama_id', 'panoramaID', 'streetViewImage', 'pixel_hotspot']) {
+  for (const key of ['panoId', 'panorama_id', 'panoramaID', 'streetViewImage', 'pixel_hotspot']) {
     const candidate = clone(NEW_YORK_TRACER_PACKAGE);
     candidate.graph.nodes[0].streetViewTarget[key] = 'must-not-export';
-    assert.throws(() => exportAdventurePackage(candidate), /prohibited Google imagery/i, key);
+    assert.throws(() => exportAdventurePackage(candidate),
+      /not allowed|prohibited Google imagery/i, key);
   }
 });
 
@@ -182,6 +183,28 @@ test('directed story branches follow the submitted semantic action during author
   session.submit({
     type: 'participant-submission', participantId: 'author', actionId: 'skip-case',
   });
+  assert.equal(session.getState().nodeId, 'final-reasoning');
+});
+
+test('multiplayer branch ties execute the authored navigator rule', () => {
+  const candidate = clone(NEW_YORK_TRACER_PACKAGE);
+  candidate.participantRules = {
+    min: 1,
+    max: 4,
+    voting: { visibility: 'public', tieBreak: ['evidence', 'navigator'] },
+  };
+  candidate.graph.nodes[0].interaction.actions.push({ id: 'skip-case', label: 'Skip to reasoning' });
+  candidate.graph.edges = [
+    { from: 'opening-bowling-green', to: 'case-public-time', actionId: 'observe-boundary' },
+    { from: 'opening-bowling-green', to: 'final-reasoning', actionId: 'skip-case' },
+    { from: 'case-public-time', to: 'final-reasoning' },
+  ];
+  const session = new AdventureSession(candidate);
+  session.start({ participantIds: ['navigator', 'partner'], mode: 'author-playtest' });
+  const [navigation] = session.takeEffects();
+  session.resolveEffect({ type: 'adapter-result', effectId: navigation.id, ok: true });
+  session.submit({ type: 'participant-submission', participantId: 'navigator', actionId: 'skip-case' });
+  session.submit({ type: 'participant-submission', participantId: 'partner', actionId: 'observe-boundary' });
   assert.equal(session.getState().nodeId, 'final-reasoning');
 });
 
@@ -257,6 +280,29 @@ test('production route shape follows the package city policy instead of a New Yo
   assert.equal(diagnostics.some((item) => item.code === 'route.segment-shape'), false);
 });
 
+test('production validation rejects invalid multiplayer rules and incomplete geographic coverage', () => {
+  const candidate = clone(NEW_YORK_TRACER_PACKAGE);
+  candidate.participantRules = {
+    min: 1, max: 4,
+    combatRoles: ['attack', 'defense', 'evidence', 'unknown'],
+    roleAssignments: { 1: [], 2: [], 3: [] },
+    voting: { visibility: 'public', tieBreak: ['random'] },
+  };
+  candidate.geography.routes = [candidate.geography.routes[0]];
+  const codes = new Set(validateAdventurePackageDetailed(candidate, { level: 'production' })
+    .map((item) => item.code));
+  assert.ok(codes.has('participants.roles.invalid'));
+  assert.ok(codes.has('participants.voting.invalid'));
+  assert.ok(codes.has('geography.anchor.unrouted'));
+});
+
+test('production validation rejects story cycles with no terminal final reasoning anchor', () => {
+  const candidate = clone(NEW_YORK_TRACER_PACKAGE);
+  candidate.graph.edges.push({ from: 'final-reasoning', to: 'opening-bowling-green' });
+  const diagnostics = validateAdventurePackageDetailed(candidate, { level: 'production' });
+  assert.ok(diagnostics.some((item) => item.code === 'graph.ending-unreachable'));
+});
+
 test('AI drafts require explicit invocation, carry provenance, and need edited human acceptance', async () => {
   let requests = 0;
   const assistant = new AuthorDraftAssistant({
@@ -288,6 +334,15 @@ test('AI drafts require explicit invocation, carry provenance, and need edited h
   assert.equal(accepted.provenance.humanEdited, true);
   assert.deepEqual(accepted.provenance.reviews,
     { facts: true, copyrightSimilarity: true, culture: true, gameplay: true });
+});
+
+test('AI assistant enforces short-reference limits before invoking the local gateway', async () => {
+  let requests = 0;
+  const assistant = new AuthorDraftAssistant({ request: async () => { requests += 1; } });
+  await assert.rejects(() => assistant.generate({
+    brief: { city: 'New York' }, sourceSummaries: [], shortReferences: ['x'.repeat(501)],
+  }), /references-must-be-short/);
+  assert.equal(requests, 0);
 });
 
 test('production validation rejects unreviewed AI provenance', () => {

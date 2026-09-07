@@ -1,3 +1,5 @@
+import { authorDraftRequestError } from '../src/campaign/v3/AuthorDraftRequest.js';
+
 const MAX_BODY_BYTES = 64 * 1024;
 
 function readBody(request) {
@@ -19,12 +21,6 @@ function send(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-function validPayload(value) {
-  return value && typeof value.brief === 'object' && !Array.isArray(value.brief) &&
-    Array.isArray(value.sourceSummaries) && value.sourceSummaries.every((item) => typeof item === 'string') &&
-    Array.isArray(value.shortReferences) && value.shortReferences.every((item) => typeof item === 'string');
-}
-
 export function authorDraftMiddleware({ endpoint, apiKey, model, fetchImpl = fetch } = {}) {
   return async (request, response, next) => {
     if (request.url !== '/api/adventure-drafts') return next();
@@ -37,7 +33,8 @@ export function authorDraftMiddleware({ endpoint, apiKey, model, fetchImpl = fet
     } catch (error) {
       return send(response, 400, { error: error.message === 'request-too-large' ? error.message : 'invalid-json' });
     }
-    if (!validPayload(payload)) return send(response, 400, { error: 'invalid-draft-request' });
+    const requestError = authorDraftRequestError(payload);
+    if (requestError) return send(response, 400, { error: requestError });
 
     try {
       const upstream = await fetchImpl(endpoint, {

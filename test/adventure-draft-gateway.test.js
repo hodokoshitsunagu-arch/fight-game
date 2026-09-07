@@ -59,3 +59,21 @@ test('configured gateway keeps its secret server-side and forwards only an expli
   assert.deepEqual(JSON.parse(response.body), { content: 'Candidate beat' });
   assert.doesNotMatch(response.body, /server-only-secret|configured-model/);
 });
+
+test('gateway rejects a full-work-sized reference before any provider request', async () => {
+  let calls = 0;
+  const response = await invoke(authorDraftMiddleware({
+    endpoint: 'https://provider.invalid/drafts',
+    apiKey: 'server-only-secret',
+    model: 'configured-model',
+    fetchImpl: async () => { calls += 1; },
+  }), { body: JSON.stringify({
+    brief: { city: 'New York' },
+    sourceSummaries: [],
+    shortReferences: ['x'.repeat(501)],
+  }) });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(calls, 0);
+  assert.deepEqual(JSON.parse(response.body), { error: 'references-must-be-short' });
+});

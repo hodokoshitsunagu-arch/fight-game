@@ -8,6 +8,11 @@ const FALLBACK_MODES = new Set([
   'skip-with-authored-summary',
   'retry-then-continue',
 ]);
+const COMBAT_ROLES = new Set(['attack', 'defense', 'evidence', 'support']);
+const STREET_VIEW_TARGET_FIELDS = new Set([
+  'position', 'radiusMetres', 'heading', 'headingTolerance', 'pitch', 'pitchTolerance',
+  'roadRelationship', 'transition', 'routeStatus', 'reviewEvidence', 'walkSteps',
+]);
 
 function diagnostic(code, path, message) {
   return { code, path, message };
@@ -32,6 +37,12 @@ function targetDiagnostics(node, path, { production }) {
       `node ${node.id} has no semantic Street View position`)];
   }
   const diagnostics = [];
+  for (const key of Object.keys(target)) {
+    if (!STREET_VIEW_TARGET_FIELDS.has(key)) diagnostics.push(diagnostic(
+      'street-view.forbidden-field', `${path}.streetViewTarget.${key}`,
+      `${path}.streetViewTarget.${key} is not allowed in semantic Street View content`,
+    ));
+  }
   if (!Number.isFinite(target.radiusMetres) || target.radiusMetres <= 0) {
     diagnostics.push(diagnostic('street-view.range.invalid', `${path}.streetViewTarget.radiusMetres`,
       `node ${node.id} has an invalid Street View range`));
@@ -91,13 +102,24 @@ function participantDiagnostics(rules, { production }) {
   }
   if (production) {
     const roles = new Set(rules.combatRoles ?? []);
-    if (roles.size !== 4 || ![1, 2, 3].every((count) => rules.roleAssignments?.[count])) {
+    const assignmentsValid = [1, 2, 3].every((count) => {
+      const assignments = rules.roleAssignments?.[count];
+      if (!Array.isArray(assignments) || assignments.length !== count ||
+          assignments.some((item) => !Array.isArray(item) || !item.length)) return false;
+      const assignedRoles = assignments.flat();
+      return assignedRoles.length === COMBAT_ROLES.size &&
+        new Set(assignedRoles).size === COMBAT_ROLES.size &&
+        assignedRoles.every((role) => COMBAT_ROLES.has(role));
+    });
+    if (roles.size !== COMBAT_ROLES.size ||
+        [...roles].some((role) => !COMBAT_ROLES.has(role)) || !assignmentsValid) {
       diagnostics.push(diagnostic('participants.roles.invalid', '$.participantRules.combatRoles',
         'participant rules must define four combat roles and 1–3 player role assignments'));
     }
-    if (rules.voting?.visibility !== 'public' || !rules.voting?.tieBreak?.length) {
+    if (rules.voting?.visibility !== 'public' ||
+        JSON.stringify(rules.voting?.tieBreak) !== JSON.stringify(['evidence', 'navigator'])) {
       diagnostics.push(diagnostic('participants.voting.invalid', '$.participantRules.voting',
-        'participant rules must define public voting and deterministic tie breaks'));
+        'participant rules must define public voting with evidence then navigator tie breaks'));
     }
   }
   return diagnostics;
@@ -165,6 +187,7 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
 
   const nodes = adventurePackage?.graph?.nodes ?? [];
   const edges = adventurePackage?.graph?.edges ?? [];
+  const graphAnalysis = analyzeAdventureGraph(adventurePackage);
   const endings = adventurePackage?.endings ?? [];
   const nodeIds = new Set(nodes.map((node) => node.id));
   const caseIds = new Set((adventurePackage?.cases ?? []).map((item) => item.id));
@@ -254,14 +277,8 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
     ));
   }
 
-  const outgoing = new Map();
-  for (const edge of edges) {
-    const values = outgoing.get(edge.from) ?? [];
-    values.push(edge);
-    outgoing.set(edge.from, values);
-  }
   for (const node of nodes) {
-    const branches = outgoing.get(node.id) ?? [];
+    const branches = graphAnalysis.outgoing.get(node.id) ?? [];
     if (branches.length < 2) continue;
     const actionIds = new Set(node.interaction?.actions?.map((action) => action.id) ?? []);
     const branchActions = branches.map((edge) => edge.actionId).filter(Boolean);
@@ -286,15 +303,24 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
     diagnostics.push(diagnostic('geography.routes.missing', '$.geography.routes',
       'production packages require an independently authored geographic route view'));
   }
+  if (production) {
+    const routedNodeIds = new Set((adventurePackage?.geography?.routes ?? [])
+      .flatMap((route) => [route.from, route.to]));
+    for (const node of nodes) {
+      if (!routedNodeIds.has(node.id)) diagnostics.push(diagnostic(
+        'geography.anchor.unrouted', '$.geography.routes',
+        `anchor ${node.id} is missing from the independent geographic route graph`));
+    }
+  }
 
-  const { reachable, canReachFinal } = analyzeAdventureGraph(adventurePackage);
+  const { reachable, canReachEnding } = graphAnalysis;
   for (const node of nodes) {
     if (!reachable.has(node.id)) diagnostics.push(diagnostic(
       'graph.unreachable', '$.graph.nodes', `node ${node.id} is unreachable from the story start`,
     ));
   }
   for (const node of nodes) {
-    if (reachable.has(node.id) && !canReachFinal.has(node.id)) diagnostics.push(diagnostic(
+    if (reachable.has(node.id) && !canReachEnding.has(node.id)) diagnostics.push(diagnostic(
       'graph.ending-unreachable', '$.graph.nodes', `node ${node.id} cannot reach a final reasoning node`,
     ));
   }

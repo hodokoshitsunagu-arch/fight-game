@@ -1,3 +1,5 @@
+import { authorDraftRequestError } from './AuthorDraftRequest.js';
+
 function cleanRequest(input) {
   return {
     brief: structuredClone(input?.brief ?? {}),
@@ -13,7 +15,10 @@ export class AuthorDraftAssistant {
 
   async generate(input) {
     if (typeof this.request !== 'function') throw new Error('AI draft gateway is not configured');
-    const result = await this.request(cleanRequest(input));
+    const payload = cleanRequest(input);
+    const requestError = authorDraftRequestError(payload);
+    if (requestError) throw new Error(requestError);
+    const result = await this.request(payload);
     if (!result?.content) throw new Error('AI draft gateway returned no content');
     return {
       id: globalThis.crypto?.randomUUID?.() ?? `draft-${Date.now()}`,

@@ -25,6 +25,7 @@ export class AdventureSession {
       nodeId: null,
       segment: null,
       participantIds: [],
+      navigatorParticipantId: null,
       submissions: [],
       availableActions: [],
       evidenceIds: [],
@@ -41,7 +42,12 @@ export class AdventureSession {
     const firstNodeId = startNodeId ?? this.package.graph.startNodeId;
     if (!this.nodes.has(firstNodeId)) throw new Error(`Unknown adventure node ${firstNodeId}`);
     this.pendingEffects = [];
-    this.state = { ...this._freshState(), participantIds: unique, mode };
+    this.state = {
+      ...this._freshState(),
+      participantIds: unique,
+      navigatorParticipantId: unique[0],
+      mode,
+    };
     if (mode === 'author-playtest') {
       this.state.evidenceIds = [...(this.nodes.get(firstNodeId).interaction?.requiresEvidence ?? [])];
     }
@@ -118,9 +124,33 @@ export class AdventureSession {
     for (const submission of this.state.submissions) {
       votes.set(submission.actionId, (votes.get(submission.actionId) ?? 0) + 1);
     }
-    const winningActionId = actionOrder.reduce((winner, actionId) =>
-      (votes.get(actionId) ?? 0) > (votes.get(winner) ?? -1) ? actionId : winner
-    , actionOrder[0]);
+    const maxVotes = Math.max(...votes.values());
+    const tiedActionIds = actionOrder.filter((actionId) => votes.get(actionId) === maxVotes);
+    let winningActionId = tiedActionIds[0];
+    for (const strategy of this.package.participantRules?.voting?.tieBreak ?? []) {
+      if (tiedActionIds.length < 2) break;
+      let resolved = false;
+      if (strategy === 'evidence') {
+        const supported = node.interaction.actions.filter((action) =>
+          tiedActionIds.includes(action.id) &&
+          action.tieBreakEvidenceId && evidence.has(action.tieBreakEvidenceId)
+        );
+        if (supported.length === 1) {
+          winningActionId = supported[0].id;
+          resolved = true;
+        }
+      } else if (strategy === 'navigator') {
+        const submission = this.state.submissions.find((item) =>
+          item.participantId === this.state.navigatorParticipantId &&
+          tiedActionIds.includes(item.actionId)
+        );
+        if (submission) {
+          winningActionId = submission.actionId;
+          resolved = true;
+        }
+      }
+      if (resolved) break;
+    }
     const nextEdge = outgoing.find((edge) => edge.actionId === winningActionId) ??
       outgoing.find((edge) => !edge.actionId) ??
       (outgoing.length === 1 ? outgoing[0] : null);
