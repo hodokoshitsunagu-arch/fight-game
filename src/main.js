@@ -6,6 +6,7 @@ import { campaignVersionFromSearch } from './campaign/campaignVersion.js';
 import {
   PUBLISHED_ADVENTURE_PACKAGES,
 } from './campaign/v3/PublishedAdventurePackages.js';
+import { AdventureEventSink } from './campaign/v3/AdventureEventSink.js';
 
 /**
  * Entry point.
@@ -21,10 +22,16 @@ async function boot() {
     const campaignVersion = campaignVersionFromSearch(window.location.search);
     let adventurePackage = PUBLISHED_ADVENTURE_PACKAGES[0] ?? null;
     if (import.meta.env.DEV && campaignVersion === 3) {
-      const development = await import('./campaign/v3/packages/newYorkTracer.js');
-      adventurePackage = development.NEW_YORK_TRACER_PACKAGE;
+      const development = await import('./campaign/v3/packages/newYorkSharedShell.js');
+      adventurePackage = development.NEW_YORK_SHARED_SHELL_PACKAGE;
     }
-    const app = new App(canvas, { adventurePackage });
+    const adventureEventSink = new AdventureEventSink({
+      enabled: import.meta.env.VITE_ADVENTURE_EVENTS_ENABLED === 'true',
+      region: import.meta.env.VITE_ADVENTURE_EVENTS_REGION ?? null,
+      enabledRegions: (import.meta.env.VITE_ADVENTURE_EVENTS_ENABLED_REGIONS ?? '')
+        .split(',').map((item) => item.trim()).filter(Boolean),
+    });
+    const app = new App(canvas, { adventurePackage, adventureEventSink });
     await app.load();
 
     // Handy for poking at the scene from the console.

@@ -1,11 +1,12 @@
 import { AdventureSession } from './AdventureSession.js';
 
 export class AdventureRuntime {
-  constructor({ adventurePackage, participantIds, streetView, discoveryStore, hud }) {
+  constructor({ adventurePackage, participantIds, streetView, discoveryStore, eventSink = null, hud }) {
     this.package = adventurePackage;
     this.participantIds = participantIds;
     this.streetView = streetView;
     this.discoveryStore = discoveryStore;
+    this.eventSink = eventSink;
     this.hud = hud;
     this.session = new AdventureSession(adventurePackage);
     this.hud?.bind?.((input) => this.submit(input));
@@ -60,8 +61,13 @@ export class AdventureRuntime {
         if (effect.type === 'navigate-street-view') {
           const outcome = await this.streetView.navigate(effect);
           this.session.resolveEffect(outcome);
+        } else if (effect.type === 'set-street-view-lock') {
+          this.streetView?.setLocked?.(effect.locked);
         } else if (effect.type === 'persist-discovery') {
-          this.discoveryStore.apply(effect, this.package);
+          this.discoveryStore?.apply?.(effect, this.package);
+        } else if (effect.type === 'record-adventure-event') {
+          // Analytics can fail or be slow without becoming a story progression gate.
+          void this.eventSink?.apply?.(effect);
         }
         this._render();
       }

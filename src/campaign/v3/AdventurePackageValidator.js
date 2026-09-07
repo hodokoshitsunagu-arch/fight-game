@@ -103,7 +103,7 @@ function participantDiagnostics(rules, { production }) {
   }
   if (production) {
     const roles = new Set(rules.combatRoles ?? []);
-    const assignmentsValid = [1, 2, 3].every((count) => {
+    const assignmentsValid = [1, 2, 3, 4].every((count) => {
       const assignments = rules.roleAssignments?.[count];
       if (!Array.isArray(assignments) || assignments.length !== count ||
           assignments.some((item) => !Array.isArray(item) || !item.length)) return false;
@@ -122,6 +122,15 @@ function participantDiagnostics(rules, { production }) {
       diagnostics.push(diagnostic('participants.voting.invalid', '$.participantRules.voting',
         'participant rules must define public voting with evidence then navigator tie breaks'));
     }
+    if (rules.navigation?.rotation !== 'per-anchor') diagnostics.push(diagnostic(
+      'participants.navigation.invalid', '$.participantRules.navigation',
+      'participant rules must rotate the navigator at every anchor',
+    ));
+    if (rules.contributionRegions?.layout !== 'shared-panorama-overlay' ||
+        rules.contributionRegions?.persistentPanels !== false) diagnostics.push(diagnostic(
+      'participants.regions.invalid', '$.participantRules.contributionRegions',
+      'participant regions must overlay one shared panorama without persistent player panels',
+    ));
   }
   return diagnostics;
 }
@@ -242,6 +251,11 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
       diagnostics.push(diagnostic('culture.enemy-treatment.unsafe', `${path}.interaction.opponentKind`,
         `node ${node.id} combat must use an abstract anomaly, not a real cultural group`));
     }
+    if (production && node.interaction?.type === 'combat' &&
+        !['protect', 'modify', 'produce'].includes(node.interaction.evidenceOutcome)) {
+      diagnostics.push(diagnostic('combat.evidence-outcome.invalid', `${path}.interaction.evidenceOutcome`,
+        `node ${node.id} combat must protect, modify, or produce case evidence`));
+    }
     if (!node.fallback?.id) diagnostics.push(diagnostic(
       'fallback.missing', `${path}.fallback`, `node ${node.id} has no deterministic fallback`,
     ));
@@ -254,6 +268,10 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
       diagnostics.push(diagnostic('fallback.blocking', `${path}.fallback`,
         `node ${node.id} does not guarantee deterministic unblocking`));
     }
+    if (production && node.fallback?.maxAttempts !== 3) diagnostics.push(diagnostic(
+      'fallback.attempts.invalid', `${path}.fallback.maxAttempts`,
+      `node ${node.id} must deterministically unblock after three failures`,
+    ));
     if (node.culturalStatus === 'blocked') diagnostics.push(diagnostic(
       'culture.unsafe', `${path}.culturalStatus`,
       `node ${node.id} is blocked by cultural review`,
@@ -265,10 +283,17 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
     for (const id of [
       ...(node.interaction?.requiresEvidence ?? []),
       ...(node.interaction?.grantsEvidence ?? []),
+      ...(node.interaction?.actions ?? []).flatMap((action) => action.grantsEvidence ?? []),
     ]) {
       if (!evidenceIds.has(id)) diagnostics.push(diagnostic(
         'reference.evidence.unknown', `${path}.interaction`,
         `node ${node.id} references unknown evidence ${id}`,
+      ));
+    }
+    for (const action of node.interaction?.actions ?? []) {
+      if (action.selectsCaseId && !caseIds.has(action.selectsCaseId)) diagnostics.push(diagnostic(
+        'reference.case.unknown', `${path}.interaction.actions`,
+        `node ${node.id} action references unknown case ${action.selectsCaseId}`,
       ));
     }
   }

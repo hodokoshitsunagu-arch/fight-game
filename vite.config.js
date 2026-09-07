@@ -1,8 +1,10 @@
 import { defineConfig, loadEnv } from 'vite';
 import { authorDraftMiddleware } from './self-created/adventure-draft-gateway.mjs';
+import { adventureEventReceiver } from './self-created/adventure-event-receiver.mjs';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'ADVENTURE_AI_');
+  const eventEnv = loadEnv(mode, process.cwd(), 'ADVENTURE_EVENTS_');
   return {
     base: './',
     server: {
@@ -17,6 +19,13 @@ export default defineConfig(({ mode }) => {
           endpoint: process.env.ADVENTURE_AI_ENDPOINT || env.ADVENTURE_AI_ENDPOINT,
           apiKey: process.env.ADVENTURE_AI_KEY || env.ADVENTURE_AI_KEY,
           model: process.env.ADVENTURE_AI_MODEL || env.ADVENTURE_AI_MODEL,
+        }));
+        server.middlewares.use(adventureEventReceiver({
+          enabled: (process.env.ADVENTURE_EVENTS_ENABLED || eventEnv.ADVENTURE_EVENTS_ENABLED) === 'true',
+          region: process.env.ADVENTURE_EVENTS_REGION || eventEnv.ADVENTURE_EVENTS_REGION || null,
+          enabledRegions: (process.env.ADVENTURE_EVENTS_ENABLED_REGIONS ||
+            eventEnv.ADVENTURE_EVENTS_ENABLED_REGIONS || '').split(',').map((item) => item.trim())
+            .filter(Boolean),
         }));
       },
     }],

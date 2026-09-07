@@ -109,6 +109,7 @@ export class StreetViewBackdrop {
     this.panorama = null;
     this.ready = false;
     this.error = null;
+    this.interactionLocked = false;
 
     /*
      * Two viewers, not one.
@@ -158,6 +159,17 @@ export class StreetViewBackdrop {
     this._heading = 0;
     this._pitch = 0;
     this._zoom = 1;
+  }
+
+  setInteractionLocked(locked) {
+    this.interactionLocked = Boolean(locked);
+    for (const viewer of this.viewers) {
+      viewer?.setOptions?.({
+        linksControl: !this.interactionLocked,
+        clickToGo: !this.interactionLocked,
+      });
+    }
+    this.element.dataset.interactionLocked = String(this.interactionLocked);
   }
 
   /** @returns {Promise<boolean>} whether imagery is actually on screen. */

@@ -102,8 +102,8 @@ Then open the URL Vite prints (default <http://127.0.0.1:5173>).
 | --- | --- |
 | `/` | Voice spellcasting sandbox and the existing v1 campaign |
 | `/?campaign=v2` | Ten-city cultural campaign v2; Street View is requested automatically |
-| `/?campaign=v3` | Three-anchor Cultural Campaign v3 development tracer |
-| `/?campaign=v3&players=4` | The same v3 tracer through the four-participant input path |
+| `/?campaign=v3` | New York v3 shared opening and final-reasoning candidate package |
+| `/?campaign=v3&players=4` | The same New York package through the four-participant local co-play path |
 | `/?campaign=v3&author` | Local city-generic authoring workbench (Vite development server only) |
 | `/?game` | RELIC: LAST STAND survival mode |
 
@@ -114,11 +114,20 @@ Candidate anchor coordinates remain `needs-live-check` until the billable route 
 run; see [`docs/plans/ten-city-cultural-campaign.md`](docs/plans/ten-city-cultural-campaign.md) and
 [`docs/concepts/cultural-campaign-runtime.md`](docs/concepts/cultural-campaign-runtime.md).
 
-The v3 URL currently loads a versioned three-anchor development package: shared opening, one case
-anchor, and final reasoning. Its package-driven session accepts semantic participant submissions and
-Street View adapter results, then exposes observable state and explicit effects. It records discovery
-only after the ending; it never stores an unfinished run. Development validation accepts this tracer,
-while production validation deliberately rejects it until a reviewed 36-anchor package exists.
+The development v3 URL loads the versioned New York shared-shell package. S1–S3 establish the
+archive crisis, teach the four fixed combat responsibilities and hold an informed public case vote;
+S4–S6 combine the selected case evidence and reach that case's authored conclusion. One through four
+people use the same package and one complete Street View. The navigator rotates at every anchor,
+participant regions appear only while input is needed, vote totals remain public, and ties resolve by
+majority, then an applicable evidence clue, then the current navigator. Combat locks Street View,
+uses at most two abstract anomalies and only advances by protecting, changing or producing evidence.
+For fewer than four people, responsibilities merge without AI teammates.
+
+Three failed attempts apply the authored deterministic fallback. A departure during an unsafe beat
+finishes that beat through its fallback, then reduces and reassigns the group at the next safe anchor.
+Only completed case, ending and culture-card discoveries enter local storage; an unfinished run is
+never restored. The candidate package still lacks the three ten-anchor case bodies and official
+Street View/cultural acceptance, so the production publication boundary deliberately excludes it.
 
 ### City adventure workbench
 
@@ -146,6 +155,29 @@ limited to a structured brief, source summaries and at most eight author-selecte
 500 characters each, preventing full works from crossing the gateway. Every result
 is `unreviewed`; the author must edit and accept it before production validation can allow it.
 Automated tests use injected fake providers and never make a live or billable request.
+
+### First-party adventure events
+
+The session emits versioned allowlist effects for run start, case selection, completion, successful
+culture-card propagation and deliberate next-city interest. The browser sink and minimal local
+receiver are both off unless their independent region gates are explicitly enabled. The global
+defaults therefore make no request. Accepted records use a fresh run-only ID and reject extra fields;
+the boundary does not deliberately retain IP addresses, full User-Agent values, free text, device IDs
+or cross-run identities. This implementation is a technical boundary, not a claim of legal approval.
+
+Rendering a culture card emits nothing. Only a successful system share or an initiated download
+creates the propagation effect. The nine-city completion choices record intent only and never launch
+an unvalidated city. Region enablement remains a later legal and data-flow gate; production should not
+set these variables until that review is complete:
+
+```bash
+VITE_ADVENTURE_EVENTS_ENABLED=true
+VITE_ADVENTURE_EVENTS_REGION=us
+VITE_ADVENTURE_EVENTS_ENABLED_REGIONS=us
+ADVENTURE_EVENTS_ENABLED=true
+ADVENTURE_EVENTS_REGION=us
+ADVENTURE_EVENTS_ENABLED_REGIONS=us
+```
 
 The workbench does not store Google imagery, pixel hotspots or panorama IDs. Route status cannot be
 treated as verified merely because the free content checks or build pass; the real viewer layout is

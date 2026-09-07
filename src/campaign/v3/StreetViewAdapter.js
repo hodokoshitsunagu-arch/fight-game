@@ -96,6 +96,10 @@ export class StreetViewAdapter {
     }
   }
 
+  setLocked(locked) {
+    this.getStreetView?.()?.setInteractionLocked?.(locked);
+  }
+
   async preview(target) {
     const view = this.getStreetView?.();
     if (!view) return { ok: false, reason: 'viewer-unavailable' };

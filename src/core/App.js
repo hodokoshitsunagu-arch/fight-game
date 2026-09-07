@@ -80,7 +80,7 @@ const WORLD_UP = new Vector3(0, 1, 0);
  * character and a cooldown.
  */
 export class App {
-  constructor(canvas, { adventurePackage = null } = {}) {
+  constructor(canvas, { adventurePackage = null, adventureEventSink = null } = {}) {
     this.canvas = canvas;
     this.time = new Time();
     this.elapsed = 0;
@@ -88,6 +88,7 @@ export class App {
     this.hitStopRemaining = 0;
     this._raf = 0;
     this.adventurePackage = adventurePackage;
+    this.adventureEventSink = adventureEventSink;
     this.authoringStreetView = false;
 
     /**
@@ -653,6 +654,7 @@ export class App {
         participantIds: Array.from({ length: participantCount }, (_, index) => `p${index + 1}`),
         streetView: new StreetViewAdapter(() => this.streetView),
         discoveryStore: new DiscoveryStore(),
+        eventSink: this.adventureEventSink,
         hud: this.v3AdventureHUD,
       });
       return;
