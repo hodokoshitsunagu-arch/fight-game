@@ -6,7 +6,12 @@ export class AdventureSession {
     if (errors.length) throw new Error(`Invalid adventure package: ${errors.join('; ')}`);
     this.package = adventurePackage;
     this.nodes = new Map(adventurePackage.graph.nodes.map((node) => [node.id, node]));
-    this.edges = new Map(adventurePackage.graph.edges.map((edge) => [edge.from, edge.to]));
+    this.edges = new Map();
+    for (const edge of adventurePackage.graph.edges) {
+      const outgoing = this.edges.get(edge.from) ?? [];
+      outgoing.push(edge);
+      this.edges.set(edge.from, outgoing);
+    }
     this.effectSequence = 0;
     this.pendingEffects = [];
     this.state = this._freshState();
@@ -20,20 +25,33 @@ export class AdventureSession {
       nodeId: null,
       segment: null,
       participantIds: [],
+      navigatorParticipantId: null,
       submissions: [],
       availableActions: [],
       evidenceIds: [],
       navigation: { degraded: false, reason: null, fallbackId: null },
       endingId: null,
+      mode: 'player',
     };
   }
 
-  start({ participantIds }) {
+  start({ participantIds, startNodeId = null, mode = 'player' }) {
     const unique = [...new Set(participantIds ?? [])];
     if (unique.length < 1 || unique.length > 4) throw new Error('Adventure sessions require 1–4 participants');
+    if (!['player', 'author-playtest'].includes(mode)) throw new Error(`Unknown adventure mode ${mode}`);
+    const firstNodeId = startNodeId ?? this.package.graph.startNodeId;
+    if (!this.nodes.has(firstNodeId)) throw new Error(`Unknown adventure node ${firstNodeId}`);
     this.pendingEffects = [];
-    this.state = { ...this._freshState(), participantIds: unique };
-    this._enterNode(this.package.graph.startNodeId);
+    this.state = {
+      ...this._freshState(),
+      participantIds: unique,
+      navigatorParticipantId: unique[0],
+      mode,
+    };
+    if (mode === 'author-playtest') {
+      this.state.evidenceIds = [...(this.nodes.get(firstNodeId).interaction?.requiresEvidence ?? [])];
+    }
+    this._enterNode(firstNodeId);
     return this.getState();
   }
 
@@ -100,9 +118,44 @@ export class AdventureSession {
     const evidence = new Set(this.state.evidenceIds);
     for (const id of node.interaction.grantsEvidence ?? []) evidence.add(id);
     this.state.evidenceIds = [...evidence];
-    const nextNodeId = this.edges.get(node.id);
-    if (nextNodeId) {
-      this._enterNode(nextNodeId);
+    const outgoing = this.edges.get(node.id) ?? [];
+    const actionOrder = node.interaction.actions.map((action) => action.id);
+    const votes = new Map(actionOrder.map((actionId) => [actionId, 0]));
+    for (const submission of this.state.submissions) {
+      votes.set(submission.actionId, (votes.get(submission.actionId) ?? 0) + 1);
+    }
+    const maxVotes = Math.max(...votes.values());
+    const tiedActionIds = actionOrder.filter((actionId) => votes.get(actionId) === maxVotes);
+    let winningActionId = tiedActionIds[0];
+    for (const strategy of this.package.participantRules?.voting?.tieBreak ?? []) {
+      if (tiedActionIds.length < 2) break;
+      let resolved = false;
+      if (strategy === 'evidence') {
+        const supported = node.interaction.actions.filter((action) =>
+          tiedActionIds.includes(action.id) &&
+          action.tieBreakEvidenceId && evidence.has(action.tieBreakEvidenceId)
+        );
+        if (supported.length === 1) {
+          winningActionId = supported[0].id;
+          resolved = true;
+        }
+      } else if (strategy === 'navigator') {
+        const submission = this.state.submissions.find((item) =>
+          item.participantId === this.state.navigatorParticipantId &&
+          tiedActionIds.includes(item.actionId)
+        );
+        if (submission) {
+          winningActionId = submission.actionId;
+          resolved = true;
+        }
+      }
+      if (resolved) break;
+    }
+    const nextEdge = outgoing.find((edge) => edge.actionId === winningActionId) ??
+      outgoing.find((edge) => !edge.actionId) ??
+      (outgoing.length === 1 ? outgoing[0] : null);
+    if (nextEdge) {
+      this._enterNode(nextEdge.to);
       return;
     }
 
@@ -113,6 +166,7 @@ export class AdventureSession {
     this.state.status = 'complete';
     this.state.availableActions = [];
     this.state.endingId = ending.id;
+    if (this.state.mode === 'author-playtest') return;
     this._effect('persist-discovery', {
       packageId: this.package.id,
       packageVersion: this.package.version,

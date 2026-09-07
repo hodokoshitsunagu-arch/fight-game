@@ -1891,3 +1891,216 @@ body.is-streetview-navigation #viewport {
     font-size: 18px;
   }
 }
+
+/* Local-only v3 authoring workbench. It deliberately reads as a tool layered
+   over the official viewer, not as player HUD or a production CMS. */
+.adventure-workbench {
+  position: fixed;
+  inset: 18px 18px 18px auto;
+  z-index: 120;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: min(620px, calc(100vw - 36px));
+  color: #e9edf2;
+  border: 1px solid rgba(210, 222, 235, 0.28);
+  border-radius: 18px;
+  background: rgba(12, 16, 21, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+  font: 13px/1.45 system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.adventure-workbench__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(210, 222, 235, 0.15);
+}
+
+.adventure-workbench__header h1 {
+  margin: 3px 0 0;
+  font: 650 22px/1.2 Georgia, serif;
+}
+
+.adventure-workbench__kicker {
+  color: #a5c8ae;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+.adventure-workbench button,
+.adventure-workbench input,
+.adventure-workbench select,
+.adventure-workbench textarea {
+  box-sizing: border-box;
+  color: inherit;
+  border: 1px solid rgba(210, 222, 235, 0.23);
+  border-radius: 7px;
+  background: #181e25;
+  font: inherit;
+}
+
+.adventure-workbench input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+}
+
+.adventure-workbench button {
+  min-height: 34px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.adventure-workbench button:hover:not(:disabled) {
+  border-color: #a5c8ae;
+  background: #202b27;
+}
+
+.adventure-workbench button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.adventure-workbench__header button {
+  width: 34px;
+  padding: 0;
+  font-size: 22px;
+}
+
+.adventure-workbench__body {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.adventure-workbench__card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(210, 222, 235, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.adventure-workbench__card h2,
+.adventure-workbench__card h3 {
+  margin: 0;
+}
+
+.adventure-workbench__card h2 {
+  font-size: 14px;
+}
+
+.adventure-workbench__card h3 {
+  color: #aeb9c4;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.adventure-workbench label,
+.adventure-workbench__fields {
+  display: grid;
+  gap: 5px;
+}
+
+.adventure-workbench__fields,
+.adventure-workbench__calibration {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.adventure-workbench input,
+.adventure-workbench select {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.adventure-workbench textarea {
+  width: 100%;
+  min-height: 128px;
+  padding: 9px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.adventure-workbench__actions,
+.adventure-workbench__calibration,
+.adventure-workbench__review-gates,
+.adventure-workbench__relations {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.adventure-workbench__review-gates label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.adventure-workbench__relations h2 {
+  grid-column: 1 / -1;
+}
+
+.adventure-workbench ol {
+  max-height: 180px;
+  margin: 7px 0 0;
+  padding-left: 22px;
+  overflow: auto;
+}
+
+.adventure-workbench li[data-state="error"],
+.adventure-workbench__diagnostics {
+  color: #ffb1a8;
+}
+
+.adventure-workbench__note {
+  margin: 0;
+  color: #aeb9c4;
+  font-size: 11px;
+}
+
+.adventure-workbench__status {
+  min-height: 20px;
+  padding: 10px 18px;
+  color: #c8e7cf;
+  border-top: 1px solid rgba(210, 222, 235, 0.15);
+  background: #10161a;
+}
+
+.adventure-workbench-toggle {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  z-index: 121;
+  min-height: 42px;
+  padding: 8px 13px;
+  color: #e9edf2;
+  border: 1px solid rgba(210, 222, 235, 0.32);
+  border-radius: 10px;
+  background: rgba(12, 16, 21, 0.94);
+  font: 600 12px/1 system-ui, sans-serif;
+}
+
+.adventure-workbench-toggle[hidden] {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .adventure-workbench {
+    inset: 8px;
+    width: auto;
+  }
+
+  .adventure-workbench__fields,
+  .adventure-workbench__calibration,
+  .adventure-workbench__relations {
+    grid-template-columns: 1fr;
+  }
+}
