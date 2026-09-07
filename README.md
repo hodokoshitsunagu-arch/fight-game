@@ -102,6 +102,8 @@ Then open the URL Vite prints (default <http://127.0.0.1:5173>).
 | --- | --- |
 | `/` | Voice spellcasting sandbox and the existing v1 campaign |
 | `/?campaign=v2` | Ten-city cultural campaign v2; Street View is requested automatically |
+| `/?campaign=v3` | Three-anchor Cultural Campaign v3 development tracer |
+| `/?campaign=v3&players=4` | The same v3 tracer through the four-participant input path |
 | `/?game` | RELIC: LAST STAND survival mode |
 
 The v2 campaign keeps v1 as the default during staged acceptance. It adds 10 chapters and 80
@@ -110,6 +112,12 @@ versioned save migration. A missing map or unavailable `localStorage` never bloc
 Candidate anchor coordinates remain `needs-live-check` until the billable route verifier has been
 run; see [`docs/plans/ten-city-cultural-campaign.md`](docs/plans/ten-city-cultural-campaign.md) and
 [`docs/concepts/cultural-campaign-runtime.md`](docs/concepts/cultural-campaign-runtime.md).
+
+The v3 URL currently loads a versioned three-anchor development package: shared opening, one case
+anchor, and final reasoning. Its package-driven session accepts semantic participant submissions and
+Street View adapter results, then exposes observable state and explicit effects. It records discovery
+only after the ending; it never stores an unfinished run. Development validation accepts this tracer,
+while production validation deliberately rejects it until a reviewed 36-anchor package exists.
 
 ```bash
 npm run build

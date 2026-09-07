@@ -26,6 +26,9 @@
  */
 
 import { settings } from '../config/settings.js';
+import { bearingDegrees, distanceMeters } from '../utils/geo.js';
+
+export { bearingDegrees, distanceMeters } from '../utils/geo.js';
 
 const SCRIPT_ID = 'google-maps-js';
 
@@ -35,28 +38,6 @@ export const STREET_VIEW_NATIVE_NAVIGATION = Object.freeze({
   linksControl: true,
   clickToGo: true
 });
-
-export function distanceMeters(a, b) {
-  if (!a || !b) return Infinity;
-  const rad = Math.PI / 180;
-  const lat1 = a.lat * rad;
-  const lat2 = b.lat * rad;
-  const dLat = (b.lat - a.lat) * rad;
-  const dLng = (b.lng - a.lng) * rad;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
-
-export function bearingDegrees(a, b) {
-  if (!a || !b) return 0;
-  const rad = Math.PI / 180;
-  const lat1 = a.lat * rad;
-  const lat2 = b.lat * rad;
-  const dLng = (b.lng - a.lng) * rad;
-  const y = Math.sin(dLng) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-  return (Math.atan2(y, x) / rad + 360) % 360;
-}
 
 /**
  * Load the Maps JavaScript API once.
