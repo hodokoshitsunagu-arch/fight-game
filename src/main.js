@@ -2,6 +2,10 @@ import { App } from './core/App.js';
 import { settings } from './config/settings.js';
 import { assetCacheStats, clearAssetCache } from './loaders/AssetCache.js';
 import { LoadingScreen } from './ui/HUD.js';
+import { campaignVersionFromSearch } from './campaign/campaignVersion.js';
+import {
+  PUBLISHED_ADVENTURE_PACKAGES,
+} from './campaign/v3/PublishedAdventurePackages.js';
 
 /**
  * Entry point.
@@ -13,11 +17,31 @@ const canvas = document.getElementById('viewport');
 
 async function boot() {
   try {
-    const app = new App(canvas);
+    const params = new URLSearchParams(window.location.search);
+    const campaignVersion = campaignVersionFromSearch(window.location.search);
+    let adventurePackage = PUBLISHED_ADVENTURE_PACKAGES[0] ?? null;
+    if (import.meta.env.DEV && campaignVersion === 3) {
+      const development = await import('./campaign/v3/packages/newYorkTracer.js');
+      adventurePackage = development.NEW_YORK_TRACER_PACKAGE;
+    }
+    const app = new App(canvas, { adventurePackage });
     await app.load();
 
     // Handy for poking at the scene from the console.
     window.app = app;
+
+    if (import.meta.env.DEV && campaignVersion === 3 && params.has('author')) {
+      const [{ AdventureWorkbenchUI }, { StreetViewAdapter }] = await Promise.all([
+        import('./ui/AdventureWorkbenchUI.js'),
+        import('./campaign/v3/StreetViewAdapter.js'),
+      ]);
+      window.adventureWorkbench = new AdventureWorkbenchUI({
+        adventurePackage,
+        streetView: new StreetViewAdapter(() => app.streetView),
+        playtest: (draftPackage, startNodeId) =>
+          app.startAuthorPlaytest(draftPackage, startNodeId),
+      });
+    }
 
     /**
      * Cast without a microphone:

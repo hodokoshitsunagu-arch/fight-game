@@ -25,15 +25,22 @@ export class AdventureSession {
       evidenceIds: [],
       navigation: { degraded: false, reason: null, fallbackId: null },
       endingId: null,
+      mode: 'player',
     };
   }
 
-  start({ participantIds }) {
+  start({ participantIds, startNodeId = null, mode = 'player' }) {
     const unique = [...new Set(participantIds ?? [])];
     if (unique.length < 1 || unique.length > 4) throw new Error('Adventure sessions require 1–4 participants');
+    if (!['player', 'author-playtest'].includes(mode)) throw new Error(`Unknown adventure mode ${mode}`);
+    const firstNodeId = startNodeId ?? this.package.graph.startNodeId;
+    if (!this.nodes.has(firstNodeId)) throw new Error(`Unknown adventure node ${firstNodeId}`);
     this.pendingEffects = [];
-    this.state = { ...this._freshState(), participantIds: unique };
-    this._enterNode(this.package.graph.startNodeId);
+    this.state = { ...this._freshState(), participantIds: unique, mode };
+    if (mode === 'author-playtest') {
+      this.state.evidenceIds = [...(this.nodes.get(firstNodeId).interaction?.requiresEvidence ?? [])];
+    }
+    this._enterNode(firstNodeId);
     return this.getState();
   }
 
@@ -113,6 +120,7 @@ export class AdventureSession {
     this.state.status = 'complete';
     this.state.availableActions = [];
     this.state.endingId = ending.id;
+    if (this.state.mode === 'author-playtest') return;
     this._effect('persist-discovery', {
       packageId: this.package.id,
       packageVersion: this.package.version,

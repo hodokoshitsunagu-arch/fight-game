@@ -104,6 +104,7 @@ Then open the URL Vite prints (default <http://127.0.0.1:5173>).
 | `/?campaign=v2` | Ten-city cultural campaign v2; Street View is requested automatically |
 | `/?campaign=v3` | Three-anchor Cultural Campaign v3 development tracer |
 | `/?campaign=v3&players=4` | The same v3 tracer through the four-participant input path |
+| `/?campaign=v3&author` | Local city-generic authoring workbench (Vite development server only) |
 | `/?game` | RELIC: LAST STAND survival mode |
 
 The v2 campaign keeps v1 as the default during staged acceptance. It adds 10 chapters and 80
@@ -118,6 +119,36 @@ anchor, and final reasoning. Its package-driven session accepts semantic partici
 Street View adapter results, then exposes observable state and explicit effects. It records discovery
 only after the ending; it never stores an unfinished run. Development validation accepts this tracer,
 while production validation deliberately rejects it until a reviewed 36-anchor package exists.
+
+### City adventure workbench
+
+The local workbench opens at `/?campaign=v3&author`. It edits city metadata, cases, graph nodes and
+edges, interactions, evidence, sources, cultural status, endings, participant rules and deterministic
+fallbacks as a versioned JSON text package. Its relationship panel deliberately separates story
+reachability from geographic Street View transitions. Authors can preview an anchor in Google's
+official viewer, record only semantic coordinates/bearing/pitch/range/road/transition data, explicitly
+accept the real layout after human inspection, and start a playtest from any anchor. Author playtests
+seed the selected anchor's required evidence and never emit discovery or telemetry effects.
+
+Development and production validation report stable codes, JSON-style paths and readable messages.
+Production additionally enforces the 36-anchor route shape, reviewed sources and cultural status,
+non-blocking fallbacks, 1–4 participant collaboration rules, the two-enemy limit, human Street View
+acceptance and reviewed AI provenance. `npm run build` validates every entry in
+`src/campaign/v3/PublishedAdventurePackages.js` before Vite starts; the development tracer and
+workbench are dynamically loaded only by the development server and are absent from production
+player assets.
+
+Optional AI drafting is an explicit author action. Configure the local Vite process through an
+ignored `.env` using `ADVENTURE_AI_ENDPOINT`, `ADVENTURE_AI_KEY` and `ADVENTURE_AI_MODEL`. These
+unprefixed values stay in the local server middleware and never enter the browser. The request is
+limited to a structured brief, source summaries and short author-selected references. Every result
+is `unreviewed`; the author must edit and accept it before production validation can allow it.
+Automated tests use injected fake providers and never make a live or billable request.
+
+The workbench does not store Google imagery, pixel hotspots or panorama IDs. Route status cannot be
+treated as verified merely because the free content checks or build pass; the real viewer layout is
+an explicit human acceptance gate. Do not run `npm run verify:city-routes -- --live` without separate
+authorization.
 
 ```bash
 npm run build

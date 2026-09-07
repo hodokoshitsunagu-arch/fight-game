@@ -43,7 +43,6 @@ import { campaignVersionFromSearch } from '../campaign/campaignVersion.js';
 import { AdventureRuntime } from '../campaign/v3/AdventureRuntime.js';
 import { DiscoveryStore } from '../campaign/v3/DiscoveryStore.js';
 import { StreetViewAdapter } from '../campaign/v3/StreetViewAdapter.js';
-import { NEW_YORK_TRACER_PACKAGE } from '../campaign/v3/packages/newYorkTracer.js';
 import { RelicShard } from '../campaign/RelicShard.js';
 import { CampaignHUD } from '../ui/CampaignHUD.js';
 import { InteractionHUD } from '../ui/InteractionHUD.js';
@@ -81,13 +80,14 @@ const WORLD_UP = new Vector3(0, 1, 0);
  * character and a cooldown.
  */
 export class App {
-  constructor(canvas) {
+  constructor(canvas, { adventurePackage = null } = {}) {
     this.canvas = canvas;
     this.time = new Time();
     this.elapsed = 0;
     this.paused = false;
     this.hitStopRemaining = 0;
     this._raf = 0;
+    this.adventurePackage = adventurePackage;
 
     /**
      * Sandbox is the default: a spell playground driven by voice, with practice
@@ -641,13 +641,14 @@ export class App {
     if (!settings.campaign.enabled) return;
 
     if (this.campaignVersion === 3) {
+      if (!this.adventurePackage) return;
       const params = new URLSearchParams(window.location.search);
       const requestedParticipants = Number(params.get('players'));
       const participantCount = Number.isInteger(requestedParticipants)
         ? Math.min(4, Math.max(1, requestedParticipants))
         : 1;
       this.campaign = new AdventureRuntime({
-        adventurePackage: NEW_YORK_TRACER_PACKAGE,
+        adventurePackage: this.adventurePackage,
         participantIds: Array.from({ length: participantCount }, (_, index) => `p${index + 1}`),
         streetView: new StreetViewAdapter(() => this.streetView),
         discoveryStore: new DiscoveryStore(),
@@ -698,6 +699,19 @@ export class App {
       this._unlocked = new Set(elements);
       this.hud?.setUnlocked?.(this._unlocked);
     };
+  }
+
+  async startAuthorPlaytest(adventurePackage, startNodeId) {
+    if (this.campaignVersion !== 3) throw new Error('Author playtest requires campaign=v3');
+    this.adventurePackage = adventurePackage;
+    this.campaign = new AdventureRuntime({
+      adventurePackage,
+      participantIds: ['author'],
+      streetView: new StreetViewAdapter(() => this.streetView),
+      discoveryStore: null,
+      hud: this.v3AdventureHUD,
+    });
+    await this.campaign.startAuthorPlaytest(startNodeId);
   }
 
   /** Whether an element may be cast — the campaign gates it, free roam does not. */

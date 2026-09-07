@@ -25,8 +25,8 @@ export class AdventureRuntime {
     } : null;
   }
 
-  async start() {
-    this.session.start({ participantIds: this.participantIds });
+  async start({ startNodeId = null, mode = 'player' } = {}) {
+    this.session.start({ participantIds: this.participantIds, startNodeId, mode });
     this._render();
     await this._applyEffects();
   }
@@ -39,6 +39,10 @@ export class AdventureRuntime {
 
   async resume() {
     await this.start();
+  }
+
+  async startAuthorPlaytest(startNodeId) {
+    await this.start({ startNodeId, mode: 'author-playtest' });
   }
 
   stop() {}

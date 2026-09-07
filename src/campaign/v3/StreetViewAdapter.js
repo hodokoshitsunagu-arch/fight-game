@@ -77,4 +77,30 @@ export class StreetViewAdapter {
       };
     }
   }
+
+  async preview(target) {
+    const view = this.getStreetView?.();
+    if (!view) return { ok: false, reason: 'viewer-unavailable' };
+    const moved = await view.moveToAnchor?.({
+      lat: target.position?.lat,
+      lng: target.position?.lng,
+      radius: target.radiusMetres,
+      transition: target.transition ?? 'coordinate',
+    });
+    if (!moved?.ok) return moved ?? { ok: false, reason: 'navigation-failed' };
+    view.panorama?.setPov?.({ heading: target.heading ?? 0, pitch: target.pitch ?? 0 });
+    return moved;
+  }
+
+  survey() {
+    const view = this.getStreetView?.();
+    const survey = view?.survey?.();
+    if (!survey?.position) return null;
+    const pov = view.panorama?.getPov?.() ?? {};
+    return {
+      position: structuredClone(survey.position),
+      heading: Number.isFinite(view.heading) ? view.heading : (pov.heading ?? 0),
+      pitch: Number.isFinite(pov.pitch) ? pov.pitch : 0,
+    };
+  }
 }
