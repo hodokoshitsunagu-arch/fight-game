@@ -39,9 +39,15 @@ import { VoiceController } from '../voice/VoiceController.js';
 import { DummyField } from '../sandbox/DummyField.js';
 import { CampaignDirector } from '../campaign/CampaignDirector.js';
 import { CulturalCampaignDirector } from '../campaign/CulturalCampaignDirector.js';
+import { campaignVersionFromSearch } from '../campaign/campaignVersion.js';
+import { AdventureRuntime } from '../campaign/v3/AdventureRuntime.js';
+import { DiscoveryStore } from '../campaign/v3/DiscoveryStore.js';
+import { StreetViewAdapter } from '../campaign/v3/StreetViewAdapter.js';
+import { NEW_YORK_TRACER_PACKAGE } from '../campaign/v3/packages/newYorkTracer.js';
 import { RelicShard } from '../campaign/RelicShard.js';
 import { CampaignHUD } from '../ui/CampaignHUD.js';
 import { InteractionHUD } from '../ui/InteractionHUD.js';
+import { V3AdventureHUD } from '../ui/V3AdventureHUD.js';
 import { SpawnTelegraph } from '../sandbox/SpawnTelegraph.js';
 import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
 import { SceneSelector } from '../ui/SceneSelector.js';
@@ -94,8 +100,9 @@ export class App {
      */
     this.sandbox =
       typeof window === 'undefined' || !new URLSearchParams(window.location.search).has('game');
-    this.campaignVersion = typeof window !== 'undefined' &&
-      new URLSearchParams(window.location.search).get('campaign') === 'v2' ? 2 : 1;
+    this.campaignVersion = campaignVersionFromSearch(
+      typeof window !== 'undefined' ? window.location.search : '',
+    );
 
     /**
      * Seconds left before each ability can be armed again. Per element, so
@@ -230,8 +237,9 @@ export class App {
       this.spawnTelegraph = new SpawnTelegraph(this.scene);
       this.dummies = new DummyField(this.enemies, { telegraph: this.spawnTelegraph });
       this.shard = new RelicShard(this.scene);
-      this.campaignHUD = new CampaignHUD(document.body);
+      this.campaignHUD = this.campaignVersion === 3 ? null : new CampaignHUD(document.body);
       this.interactionHUD = this.campaignVersion === 2 ? new InteractionHUD(document.body) : null;
+      this.v3AdventureHUD = this.campaignVersion === 3 ? new V3AdventureHUD(document.body) : null;
       this.mana = new Mana();
       this.statusBar = new StatusBar(document.body);
 
@@ -632,6 +640,22 @@ export class App {
   _buildCampaign() {
     if (!settings.campaign.enabled) return;
 
+    if (this.campaignVersion === 3) {
+      const params = new URLSearchParams(window.location.search);
+      const requestedParticipants = Number(params.get('players'));
+      const participantCount = Number.isInteger(requestedParticipants)
+        ? Math.min(4, Math.max(1, requestedParticipants))
+        : 1;
+      this.campaign = new AdventureRuntime({
+        adventurePackage: NEW_YORK_TRACER_PACKAGE,
+        participantIds: Array.from({ length: participantCount }, (_, index) => `p${index + 1}`),
+        streetView: new StreetViewAdapter(() => this.streetView),
+        discoveryStore: new DiscoveryStore(),
+        hud: this.v3AdventureHUD,
+      });
+      return;
+    }
+
     const Director = this.campaignVersion === 2 ? CulturalCampaignDirector : CampaignDirector;
     this.campaign = new Director({
       dummies: this.dummies,
@@ -678,7 +702,7 @@ export class App {
 
   /** Whether an element may be cast — the campaign gates it, free roam does not. */
   _isUnlocked(element) {
-    if (!this.campaign || this.campaign.state === 'idle') return true;
+    if (!this.campaign || this.campaignVersion === 3 || this.campaign.state === 'idle') return true;
     return this._unlocked ? this._unlocked.has(element) : true;
   }
 
@@ -982,7 +1006,7 @@ export class App {
     // v2 introduces itself through the interaction panel; stacking the legacy
     // voice tutorial over that first decision obscures both on a phone. The ?
     // button remains available and still opens this guide on demand.
-    if (!seen && this.campaignVersion !== 2) this.hud.toggleHelp();
+    if (!seen && this.campaignVersion === 1) this.hud.toggleHelp();
   }
 
   /** Select an ability and arm it, unless it is still cooling down. */

@@ -1804,3 +1804,90 @@ body.is-streetview-navigation #viewport {
   .interaction-hud__topline { font-size: 10px; }
   .interaction-hud.is-collapsed { inset: 58px auto auto 8px; }
 }
+.v3-adventure-hud {
+  position: fixed;
+  z-index: 48;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: min(460px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid rgba(194, 220, 255, 0.25);
+  border-radius: 14px;
+  background: rgba(8, 13, 22, 0.91);
+  color: #eaf2ff;
+  font: 14px/1.45 system-ui, sans-serif;
+  backdrop-filter: blur(14px);
+  box-sizing: border-box;
+}
+
+.v3-adventure-hud__eyebrow {
+  color: #8fc8ff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v3-adventure-hud__title {
+  margin: 5px 0 7px;
+  font-size: 21px;
+}
+
+.v3-adventure-hud__status,
+.v3-adventure-hud__fact,
+.v3-adventure-hud__fantasy,
+.v3-adventure-hud__prompt {
+  margin: 7px 0;
+}
+
+.v3-adventure-hud__status {
+  color: #ffd58e;
+}
+
+.v3-adventure-hud__fantasy {
+  color: #c6b8ff;
+}
+
+.v3-adventure-hud__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.v3-adventure-hud__actions button {
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid rgba(143, 200, 255, 0.45);
+  border-radius: 9px;
+  background: rgba(52, 105, 158, 0.34);
+  color: inherit;
+  cursor: pointer;
+}
+
+.v3-adventure-hud__actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.v3-adventure-hud__sources {
+  display: grid;
+  margin-top: 12px;
+  font-size: 11px;
+}
+
+.v3-adventure-hud__sources a {
+  color: #abcff5;
+}
+
+@media (max-width: 520px) {
+  .v3-adventure-hud {
+    max-height: 54dvh;
+    overflow: auto;
+    padding: 14px;
+  }
+
+  .v3-adventure-hud__title {
+    font-size: 18px;
+  }
+}
