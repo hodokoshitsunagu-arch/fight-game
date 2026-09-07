@@ -6,6 +6,7 @@ import {
 } from 'three';
 import { settings } from '../config/settings.js';
 import { qualityProfile } from './Quality.js';
+import { measureViewport } from './Viewport.js';
 
 /**
  * Thin wrapper around WebGLRenderer that owns canvas sizing, pixel-ratio
@@ -18,11 +19,29 @@ export class Renderer {
       antialias: true,
       powerPreference: 'high-performance',
       stencil: false,
-      alpha: false
+      // Transparent so a DOM backdrop (Street View) can show through. The
+      // context's alpha cannot be changed after creation, so it is always on;
+      // opaque modes just clear with alpha 1.
+      alpha: true,
+      /*
+       * Not premultiplied.
+       *
+       * The last pass writes straight colour and a separate alpha, which is
+       * exactly what non-premultiplied means. Left at the default the browser
+       * would read that colour as already multiplied, and every pixel with
+       * partial coverage composites far too bright — figures over a backdrop
+       * come out as white silhouettes.
+       */
+      premultipliedAlpha: false
     });
 
-    this.gl.setPixelRatio(this.targetPixelRatio());
-    this.gl.setSize(window.innerWidth, window.innerHeight, false);
+    const { width, height } = measureViewport(canvas);
+    const pixelRatio = this.targetPixelRatio();
+    this.gl.setPixelRatio(pixelRatio);
+    this.gl.setSize(width, height, false);
+    this._lastWidth = width;
+    this._lastHeight = height;
+    this._lastPixelRatio = pixelRatio;
 
     this.gl.shadowMap.enabled = true;
     this.gl.shadowMap.type = PCFSoftShadowMap;
@@ -41,6 +60,9 @@ export class Renderer {
     this.gl.info.autoReset = false;
 
     this._onResize = null;
+    this._resizeObserver = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(this.handleResize)
+      : null;
   }
 
   /** Cap the pixel ratio: 4K + heavy transparency is not worth the fill rate. */
@@ -59,14 +81,26 @@ export class Renderer {
   onResize(callback) {
     this._onResize = callback;
     window.addEventListener('resize', this.handleResize, { passive: true });
+    window.visualViewport?.addEventListener('resize', this.handleResize, { passive: true });
+    this._resizeObserver?.observe(this.domElement);
+    callback?.(this._lastWidth, this._lastHeight, this._lastPixelRatio);
   }
 
   handleResize = () => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    this.gl.setPixelRatio(this.targetPixelRatio());
-    this.gl.setSize(w, h, false);
-    this._onResize?.(w, h, this.gl.getPixelRatio());
+    const { width, height } = measureViewport(this.domElement);
+    const pixelRatio = this.targetPixelRatio();
+    if (
+      width === this._lastWidth &&
+      height === this._lastHeight &&
+      Math.abs(pixelRatio - this._lastPixelRatio) <= 0.001
+    ) return;
+
+    this.gl.setPixelRatio(pixelRatio);
+    this.gl.setSize(width, height, false);
+    this._lastWidth = width;
+    this._lastHeight = height;
+    this._lastPixelRatio = pixelRatio;
+    this._onResize?.(width, height, pixelRatio);
   };
 
   /** Called once per frame before rendering so the editor can drive exposure. */
@@ -78,6 +112,8 @@ export class Renderer {
 
   dispose() {
     window.removeEventListener('resize', this.handleResize);
+    window.visualViewport?.removeEventListener('resize', this.handleResize);
+    this._resizeObserver?.disconnect();
     this.gl.dispose();
   }
 }

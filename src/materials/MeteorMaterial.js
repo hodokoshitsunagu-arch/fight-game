@@ -237,8 +237,8 @@ export function createMeteorMaterial(environment) {
    * @param {number} charge 0..1 — how far into its run-up the meteor is
    * @param {THREE.Vector3} heading unit direction of travel, world space
    */
-  material.userData.sync = (charge = 0, heading = null) => {
-    const c = settings.meteor;
+  material.userData.sync = (charge = 0, heading = null, cfg = settings.meteor) => {
+    const c = cfg;
     const g = settings.global;
 
     uniforms.uColorRock.value.copy(getColor(c.colorRock));

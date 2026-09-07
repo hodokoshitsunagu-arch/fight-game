@@ -23,8 +23,13 @@ html,
 body {
   margin: 0;
   padding: 0;
+  width: 100%;
   height: 100%;
+  max-width: 100vw;
+  max-height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
   background: #05070a;
   color: var(--ui-text);
   font-family: var(--ui-font);
@@ -33,12 +38,27 @@ body {
 
 #viewport {
   position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: 100vw;
+  max-height: 100dvh;
   display: block;
+  contain: strict;
+  transform: none;
+  transform-origin: 0 0;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   cursor: crosshair;
+}
+
+/* In exploration/question beats, exposed areas belong to Google's official
+   Street View viewer. Combat restores the canvas hit target for spell casts. */
+body.is-streetview-navigation #viewport {
+  pointer-events: none;
 }
 
 /* ------------------------------------------------------------------ *
@@ -155,16 +175,179 @@ body {
  * Ability bar
  * ------------------------------------------------------------------ */
 
+/*
+ * The spell list lives down the right-hand edge as a vertical strip.
+ *
+ * It sits at 50% opacity so it never competes with the effects, which are the
+ * whole point of the build; a press bumps it back to legible while you are
+ * actually using it. The header folds the list away for small screens.
+ */
 .hud__abilities {
   position: absolute;
-  left: 50%;
-  bottom: 26px;
-  transform: translateX(-50%);
+  right: 10px;
+  top: 10px;
+  width: 152px;
+  max-width: 42vw;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
+  gap: 6px;
   pointer-events: auto;
+  opacity: 0.5;
+  transition: opacity 0.18s ease;
+}
+
+.hud__abilities:active,
+.hud__abilities.is-collapsed {
+  opacity: 0.92;
+}
+
+.hud__abilities-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  /* 40px exactly: the status bars and the scene selector are 40, and the three
+     of them are meant to read as one band across the top. */
+  height: 40px;
+  padding: 0 11px;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--ui-text);
+  font: 600 11px/1 var(--ui-font);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  /* A header that scrolls the page or pops a text callout when tapped is
+     broken on a phone. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud__abilities-header:active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.hud__abilities-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 0.22s ease;
+  opacity: 0.8;
+}
+
+.hud__abilities.is-collapsed .hud__abilities-chevron {
+  transform: rotate(-135deg) translate(-1px, -1px);
+}
+
+.hud__abilities-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Leaves the bottom of the screen to the mic and the transcript. */
+  max-height: min(calc(100vh - 300px), 430px);
+  /* A flex item defaults to `min-height: auto`, which is its content height —
+     that silently overrides `max-height: 0` and the collapse does nothing. */
+  min-height: 0;
+  /* Collapse animates on max-height, so it needs a value to animate from. */
+  transition: max-height 0.26s ease, opacity 0.2s ease;
+}
+
+.hud__abilities.is-collapsed .hud__abilities-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hud__ability-divider {
+  height: 1px;
+  margin: 3px 2px;
+  background: var(--ui-border);
+}
+
+/*
+ * Compact horizontal cards, so twelve of them fit down a phone screen without
+ * becoming the screen.
+ *
+ * The English name is the one that stays: it is what you actually say out loud,
+ * so it is the actionable half. The Chinese label moves to the tooltip rather
+ * than doubling every card's height.
+ */
+.hud__abilities .ability-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  min-height: 0;
+}
+
+.hud__abilities .ability-card__glyph {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+.hud__abilities .ability-card__glyph .glyph-svg {
+  width: 20px;
+  height: 20px;
+}
+
+.hud__abilities .ability-card__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.hud__abilities .ability-card__label > span:first-child {
+  display: block;
+  font-size: 9px;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  /* Two lines rather than an ellipsis: "GRAVITY SINGULARITY" truncated to
+     "GRAVITY SI..." hides the word you have to say. */
+  white-space: normal;
+  /* Break at spaces first. `anywhere` split "GRAVITY SINGULARITY" into
+     "SINGULARIT / Y", which is worse than a narrow column. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+  /* The base rule reserves 27px for the two-line centred layout of the old
+     bottom bar; in the strip that is dead vertical space. */
+  min-height: 0;
+}
+
+.hud__abilities .ability-card__label-zh {
+  display: none;
+}
+
+.hud__abilities .ability-card__cooldown {
+  left: 20px;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%) scale(0.9);
+}
+
+.hud__abilities .ability-card__cooldown strong {
+  font-size: 11px;
+}
+
+.hud__abilities .ability-card__cooldown small {
+  display: none;
 }
 
 .damage-numbers {
@@ -191,16 +374,9 @@ body {
   will-change: opacity;
 }
 
-.hud__ability-row {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-}
 
-.hud__ability-gap {
-  width: 8px;
-  flex: 0 0 8px;
-}
+
+
 
 .ability-card--self {
   background: rgba(16, 24, 31, 0.72);
@@ -426,14 +602,50 @@ body {
 }
 
 .hud__help {
-  left: 22px;
-  bottom: 250px;
-  width: min(430px, calc(100vw - 44px));
-  max-width: 430px;
+  left: 12px;
+  bottom: 96px;
+  width: min(310px, calc(100vw - 180px));
   font-size: 11px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--ui-text-dim);
   transition: opacity 0.3s ease;
+}
+
+.hud__help-title {
+  margin-bottom: 8px;
+  color: var(--ui-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hud__help-step {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 7px;
+  color: var(--ui-text);
+}
+
+.hud__help-step b {
+  flex: 0 0 auto;
+  display: grid;
+  place-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* Something to actually read aloud. */
+.hud__help-say {
+  margin: 3px 0 0 22px;
+  color: var(--ui-accent, #8fb7ff);
+  font-size: 10px;
+  line-height: 1.55;
 }
 
 .hud__help-zh {
@@ -465,8 +677,9 @@ body {
 }
 
 .hud__stats {
-  right: 22px;
-  top: 22px;
+  /* Left-hand side now: the right edge belongs to the spell strip. */
+  left: 12px;
+  top: 74px;
   min-width: 132px;
   font-variant-numeric: tabular-nums;
   color: var(--ui-text-dim);
@@ -716,11 +929,878 @@ body {
 }
 
 @media (max-width: 760px) {
-  .hud__help,
   .hud__stats {
     display: none;
   }
-  .ability-card {
-    width: 78px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Voice HUD — the mic is the primary control on a phone
+ * ------------------------------------------------------------------ */
+
+.voice-hud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.voice-hud.is-hidden {
+  opacity: 0;
+}
+
+.voice-hud__readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  /* Reserve the space so the mic never jumps when a transcript appears. */
+  min-height: 62px;
+  justify-content: flex-end;
+  padding: 0 12px;
+}
+
+.voice-hud__transcript {
+  max-width: min(560px, 92vw);
+  color: #fff;
+  font-size: clamp(17px, 5vw, 26px);
+  font-weight: 600;
+  text-align: center;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.voice-hud__transcript.is-visible {
+  opacity: 1;
+}
+
+.voice-hud__chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.voice-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 16, 24, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #d7dfec;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* A modifier that landed after the cast had already left. */
+.voice-chip--late {
+  outline: 1px dashed rgba(255, 255, 255, 0.28);
+  outline-offset: 2px;
+}
+
+.voice-hud__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+.voice-hud__mic {
+  position: relative;
+  display: grid;
+  place-content: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(14, 19, 28, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 26px -8px rgba(0, 0, 0, 0.8);
+  color: #e8eef8;
+  pointer-events: auto;
+  cursor: pointer;
+  /* Everything a long press must not do on a phone: scroll, select, pop a
+     callout, or flash the tap highlight. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.14s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.voice-hud__mic svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+
+.voice-hud__mic.is-talking {
+  transform: scale(0.94);
+  background: rgba(46, 20, 24, 0.9);
+  border-color: rgba(255, 90, 90, 0.75);
+  color: #ff8f8f;
+}
+
+.voice-hud__mic.is-unsupported {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Pulses only while the recogniser is actually open. */
+.voice-hud__mic-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 90, 90, 0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.voice-hud__mic.is-listening .voice-hud__mic-ring {
+  animation: voice-pulse 1.25s ease-out infinite;
+}
+
+@keyframes voice-pulse {
+  0% { opacity: 0.75; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.32); }
+}
+
+/*
+ * Above the microphone, and faint.
+ *
+ * It used to sit beside the mic, which put a permanent second button in the
+ * one place the thumb has to hit without looking. Stacked and semi-transparent
+ * it stays reachable and stops competing.
+ */
+.voice-hud__help-btn {
+  align-self: center;
+  margin-bottom: 8px;
+  opacity: 0.45;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--ui-border);
+  background: rgba(14, 19, 28, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--ui-text-dim);
+  font: 600 15px/1 var(--ui-font);
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.voice-hud__help-btn:active {
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.voice-hud__hint {
+  color: var(--ui-text-dim);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+}
+
+/* On a phone the how-to-play guide is the onboarding, so it stays available —
+   only the debug stats panel is dropped. */
+@media (max-width: 760px) {
+  /* Keep the toast clear of the spell strip on the right. */
+  .hud__toast {
+    left: 12px;
+    right: 152px;
+    transform: translateY(-12px);
+    max-width: none;
+    font-size: 11px;
   }
+
+  .hud__toast.is-visible {
+    transform: translateY(0);
+  }
+
+  .hud__help {
+    display: block;
+    left: 10px;
+    right: auto;
+    bottom: 150px;
+    width: min(300px, calc(100vw - 20px));
+  }
+
+  .hud__abilities {
+    width: 112px;
+    right: 8px;
+    /* Back on the top row. The selector is half its old width and centred now,
+       so the three panels sit side by side instead of stacking. */
+    top: 10px;
+    max-height: calc(100vh - 150px);
+  }
+
+  .hud__abilities-body {
+    max-height: min(calc(100vh - 260px), 400px);
+  }
+
+  .voice-hud__mic {
+    width: 70px;
+    height: 70px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Scene selector — top centre, the only edge the other UI leaves free
+ * ------------------------------------------------------------------ */
+
+.scene-selector {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  /* Half of what it was: the top edge is shared with the status bars and the
+     spell strip now, and it was taking width neither of them could spare. */
+  width: min(152px, calc(50vw - 20px));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  /*
+   * The container does not take pointers; its children do.
+   *
+   * A collapsed list is `visibility: hidden`, which still occupies layout — so
+   * this box stands 531px tall with nothing visible in most of it. With
+   * `pointer-events: auto` here, that whole column swallowed taps meant for the
+   * scene behind it, which measured as the middle of the screen belonging to a
+   * dropdown that was not open.
+   */
+  pointer-events: none;
+  /* Out of the way at rest, legible the moment it is being used — the same
+     bargain the spell strip makes. */
+  opacity: 0.6;
+  transition: opacity 0.18s ease;
+}
+
+.scene-selector.is-open,
+.scene-selector.is-busy,
+.scene-selector:active {
+  /* Fully opaque while open. At 0.95 the container's alpha multiplied the
+     list's own, and the spell strip showed straight through ten rows of text. */
+  opacity: 1;
+}
+
+.scene-selector__current {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px; /* matches the spell strip's header, so the two read as a pair */
+  padding: 0 12px;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--ui-text);
+  font: 600 13px/1 var(--ui-font);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.scene-selector__current:active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.scene-selector__flag {
+  font-size: 17px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.scene-selector__name {
+  flex: 1 1 auto;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-selector__chevron {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 0.22s ease;
+  opacity: 0.75;
+}
+
+.scene-selector.is-open .scene-selector__chevron {
+  transform: rotate(-135deg) translate(-1px, -1px);
+}
+
+/* Loading a remote landmark's tiles takes seconds; without this the UI just
+   sits there and reads as broken. */
+.scene-selector__progress {
+  height: 2px;
+  margin: 3px 2px 0;
+  border-radius: 2px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.scene-selector.is-busy .scene-selector__progress {
+  opacity: 1;
+}
+
+.scene-selector__progress i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ui-accent, #8fb7ff);
+  animation: scene-progress 1.1s ease-in-out infinite;
+}
+
+@keyframes scene-progress {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(260%); }
+}
+
+.scene-selector__list {
+  pointer-events: auto;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border);
+  background: rgba(8, 11, 16, 0.97);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--ui-shadow);
+  /* Ten rows do not fit a phone, so the list scrolls rather than running off
+     the bottom of the screen. */
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* A flex item defaults to min-height:auto, which would override this. */
+  min-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.22s ease, visibility 0.22s;
+}
+
+.scene-selector.is-open .scene-selector__list {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.scene-selector__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* 48px: a thumb needs 44 as a floor, and these names need the extra. */
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ui-text);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scene-selector__item:active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.scene-selector__item.is-current {
+  border-color: var(--ui-accent, #8fb7ff);
+  background: rgba(143, 183, 255, 0.12);
+}
+
+.scene-selector__item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scene-selector__item-text b {
+  font: 600 13px/1.2 var(--ui-font);
+}
+
+.scene-selector__item-text small {
+  font-size: 10px;
+  color: var(--ui-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The scene's own line, once the place is actually on screen. */
+.scene-blurb {
+  position: fixed;
+  left: 50%;
+  bottom: 24%;
+  transform: translateX(-50%) translateY(6px);
+  z-index: 44;
+  max-width: min(460px, 88vw);
+  padding: 11px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-border);
+  background: rgba(10, 14, 20, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #e6edf8;
+  font: 13px/1.7 var(--ui-font);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.scene-blurb.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* The toast lives top-centre too. Push it below the selector rather than
+   letting the two stack — the spell strip needed the same avoidance
+   horizontally. */
+.hud__toast {
+  top: 116px;
+}
+
+@media (max-width: 760px) {
+  .scene-selector {
+    /* Half of the 280 it used to be, as asked. The panels either side are
+       trimmed to make room rather than this one being squeezed below the width
+       its own labels need — at 108 the names truncated to "时…". */
+    width: 140px;
+  }
+
+  .hud__toast {
+    top: 104px;
+  }
+
+  .scene-blurb {
+    bottom: 27%;
+    font-size: 12px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Mini map — position, facing, exits, trail
+ * ------------------------------------------------------------------ */
+
+.minimap {
+  position: fixed;
+  /* Bottom right. The microphone has the
+     centre, and the top edge belongs to the three aligned panels. */
+  right: 10px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  z-index: 42;
+  width: 152px;
+  height: 152px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  background: #12151b;
+  box-shadow: var(--ui-shadow);
+  pointer-events: auto;
+  opacity: 0.72;
+  transition: opacity 0.18s ease, height 0.24s ease, width 0.24s ease;
+}
+
+.minimap:active,
+.minimap:hover {
+  opacity: 1;
+}
+
+.minimap.is-collapsed {
+  width: 42px;
+  height: 42px;
+}
+
+.minimap.is-collapsed .minimap__canvas,
+.minimap.is-collapsed .minimap__cone,
+.minimap.is-collapsed .minimap__pin,
+.minimap.is-collapsed .minimap__label {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.minimap__canvas {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.2s ease;
+}
+
+/*
+ * The view cone. A fixed element in the middle of the box, because the map is
+ * kept centred on the panorama — the world turns under a stationary player,
+ * which is also how the game feels.
+ */
+.minimap__cone {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  transform-origin: 50% 100%;
+  transform: translate(-50%, -100%);
+  background: conic-gradient(
+    from -22deg,
+    rgba(143, 183, 255, 0.55),
+    rgba(143, 183, 255, 0.1) 44deg,
+    transparent 45deg
+  );
+  clip-path: polygon(50% 100%, 0 0, 100% 0);
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.minimap__pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: #8fb7ff;
+  box-shadow: 0 0 0 2px rgba(10, 14, 20, 0.9);
+  pointer-events: none;
+}
+
+/* No links means nowhere to walk — a standalone photosphere. Say so rather
+   than leaving the player pressing W at a picture. */
+.minimap.is-stuck .minimap__pin {
+  background: #ff8f6a;
+}
+
+.minimap__toggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-border);
+  background: rgba(10, 14, 20, 0.82);
+  color: var(--ui-text-dim);
+  font: 11px/1 var(--ui-font);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 2;
+}
+
+.minimap.is-collapsed .minimap__toggle {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(180deg);
+  border: none;
+  background: transparent;
+}
+
+/*
+ * Top, not bottom.
+ *
+ * Google's "Map Data / Terms" attribution sits along the bottom edge and may
+ * not be obscured — the terms require it visible and legible, and a coordinate
+ * readout printed over it is exactly the thing not to do.
+ */
+.minimap__label {
+  position: absolute;
+  left: 0;
+  right: 26px; /* clear of the collapse button */
+  top: 0;
+  padding: 3px 6px;
+  background: linear-gradient(rgba(8, 11, 16, 0.9) 45%, transparent);
+  color: var(--ui-text-dim);
+  font: 9px/1.4 var(--ui-font);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+@media (max-width: 760px) {
+  .minimap {
+    width: 128px;
+    height: 128px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Top edge: status bars, scene selector, spell strip — one line
+ * ------------------------------------------------------------------ */
+
+/*
+ * All three sit at `top: 10px` and stand 40px tall. The top of the screen reads
+ * as a single band that way; a panel of a different height breaks the line and
+ * the whole edge looks accidental.
+ */
+.status-bar {
+  position: fixed;
+  left: 10px;
+  top: 10px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.status-bar.is-hidden {
+  opacity: 0;
+}
+
+/* One row, not two stacked: the neighbours are 40px and a status block twice
+   their height would break the band. */
+.status-bar__track {
+  position: relative;
+  width: 74px;
+  height: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.status-bar__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(1);
+  transition: transform 0.24s ease;
+}
+
+.status-bar__fill--hp {
+  background: linear-gradient(90deg, #3fbf6a, #7ce3a0);
+}
+
+.status-bar__fill--mp {
+  background: linear-gradient(90deg, #3a7fd5, #7fc4ff);
+}
+
+.status-bar.is-hp-low .status-bar__fill--hp {
+  background: linear-gradient(90deg, #c8402f, #ff7a5c);
+}
+
+/* Label and number ride inside the bar: a phone has no width for either
+   beside it, and a bar with no number is a feeling rather than a readout. */
+.status-bar__label,
+.status-bar__value {
+  position: absolute;
+  top: 0;
+  line-height: 16px;
+  font: 600 9px/16px var(--ui-font);
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.status-bar__label { left: 5px; }
+.status-bar__value { right: 5px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+
+/* ------------------------------------------------------------------ *
+ * Cultural campaign v2 — shared interaction and provenance surface
+ * ------------------------------------------------------------------ */
+
+.interaction-hud {
+  position: fixed;
+  inset: 62px 12px auto;
+  z-index: 58;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.interaction-hud.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.interaction-hud__panel {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 180px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgba(143, 218, 255, 0.28);
+  border-radius: 18px;
+  background: linear-gradient(150deg, rgba(9, 16, 24, 0.96), rgba(15, 25, 35, 0.9));
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  pointer-events: auto;
+}
+
+/* The question panel background is 70% transparent. Text and controls remain
+   opaque so the Street View context stays visible without harming legibility. */
+.interaction-hud.is-question .interaction-hud__panel {
+  background: linear-gradient(150deg, rgba(9, 16, 24, 0.3), rgba(15, 25, 35, 0.3));
+}
+
+.interaction-hud__topline,
+.interaction-hud__source-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ui-text-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.interaction-hud__topline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.interaction-hud__collapse,
+.interaction-hud__recovery {
+  border: 1px solid rgba(127, 214, 255, 0.28);
+  border-radius: 9px;
+  color: var(--ui-text);
+  background: rgba(70, 145, 185, 0.14);
+  font: 600 12px/1.2 var(--ui-font);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.interaction-hud__collapse { min-height: 30px; padding: 4px 8px; }
+.interaction-hud__recovery { min-height: 40px; padding: 8px 11px; }
+.interaction-hud__recovery:not([hidden]) { display: block; margin: 9px 0; }
+
+.interaction-hud.is-collapsed {
+  inset: 62px auto auto 12px;
+  width: auto;
+}
+
+.interaction-hud.is-collapsed .interaction-hud__panel {
+  width: auto;
+  max-width: calc(100vw - 24px);
+  padding: 8px 10px;
+  overflow: hidden;
+}
+
+.interaction-hud.is-collapsed .interaction-hud__panel > :not(.interaction-hud__topline) {
+  display: none;
+}
+
+.interaction-hud h2 {
+  margin: 8px 0 10px;
+  font-size: clamp(18px, 4.8vw, 24px);
+  line-height: 1.2;
+}
+
+.interaction-hud p { margin: 8px 0; line-height: 1.5; }
+.interaction-hud__fact { color: #dff4ff; }
+.interaction-hud__fantasy { color: #e7c9ff; }
+.interaction-hud__prompt { font-weight: 650; }
+
+.interaction-hud__choices {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.interaction-hud__choice,
+.interaction-hud__source-button {
+  min-height: 44px;
+  border: 1px solid rgba(127, 214, 255, 0.28);
+  border-radius: 12px;
+  color: var(--ui-text);
+  background: rgba(70, 145, 185, 0.14);
+  font: 600 14px/1.35 var(--ui-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.interaction-hud__choice { padding: 10px 12px; }
+.interaction-hud__choice:hover,
+.interaction-hud__choice:focus-visible { background: rgba(86, 180, 230, 0.28); outline: 2px solid var(--ui-accent); }
+
+.interaction-hud__feedback {
+  display: none;
+  padding: 9px 11px;
+  border-left: 3px solid #ffca72;
+  border-radius: 4px;
+  background: rgba(255, 184, 77, 0.09);
+  color: #ffe2a8;
+}
+
+.interaction-hud__feedback.is-visible { display: block; }
+.interaction-hud__feedback.is-success { border-color: #71e6af; color: #b8f7d8; background: rgba(76, 211, 145, 0.1); }
+.interaction-hud__source-button { min-height: 34px; padding: 4px 8px; font-size: 12px; }
+
+.interaction-hud__source {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.interaction-hud__source > div + div { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.interaction-hud__source > div > * { display: block; }
+.interaction-hud__source a { margin: 3px 0; color: var(--ui-accent); }
+
+.interaction-hud.is-combat {
+  inset: auto 12px 118px;
+  justify-content: flex-start;
+}
+
+.interaction-hud.is-combat .interaction-hud__panel { width: min(390px, 100%); max-height: 38dvh; }
+.interaction-hud.is-combat .interaction-hud__choices { display: none; }
+
+@media (max-width: 480px) {
+  .interaction-hud { inset: 58px 8px auto; }
+  .interaction-hud__panel { max-height: calc(100dvh - 174px); padding: 13px; border-radius: 15px; }
+  /* Leave the 112px spell rail fully touchable during combat. */
+  .interaction-hud.is-combat { inset: 58px 128px auto 8px; }
+  .interaction-hud.is-combat .interaction-hud__panel { width: 100%; max-height: 48dvh; padding: 11px; }
+  .interaction-hud.is-combat h2 { font-size: 16px; }
+  .interaction-hud.is-combat p { font-size: 12px; line-height: 1.4; }
+  .interaction-hud__topline { font-size: 10px; }
+  .interaction-hud.is-collapsed { inset: 58px auto auto 8px; }
 }

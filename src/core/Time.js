@@ -10,13 +10,27 @@ export class Time {
     this.maxDelta = maxDelta;
     this.elapsed = 0;
     this.delta = 0;
+    /**
+     * Wall-clock seconds since the previous tick, clamped far more loosely.
+     *
+     * The simulation must never take a multi-second step, but a story card and
+     * a fade are read by a person, not integrated by a solver — pacing them off
+     * the clamped delta means they stretch out exactly when the frame rate
+     * drops, which is when a shader is compiling or a panorama is loading and
+     * the player is already waiting.
+     */
+    this.realDelta = 0;
     this._last = performance.now() / 1000;
   }
 
   /** @returns {number} clamped seconds since the previous tick */
   tick() {
     const now = performance.now() / 1000;
-    this.delta = Math.min(now - this._last, this.maxDelta);
+    const elapsed = now - this._last;
+    // Still bounded: returning from a backgrounded tab should not fast-forward
+    // through several beats at once.
+    this.realDelta = Math.min(elapsed, 0.5);
+    this.delta = Math.min(elapsed, this.maxDelta);
     this._last = now;
     this.elapsed += this.delta;
     return this.delta;
@@ -26,5 +40,6 @@ export class Time {
   reset() {
     this._last = performance.now() / 1000;
     this.delta = 0;
+    this.realDelta = 0;
   }
 }

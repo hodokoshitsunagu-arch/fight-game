@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { settings } from '../config/settings.js';
 import { clamp, damp } from '../utils/math.js';
 import { LAYER } from './Layers.js';
+import { measureViewport } from './Viewport.js';
 
 const _dir = new Vector3();
 const _desiredTarget = new Vector3();
@@ -19,9 +20,10 @@ const _desiredTarget = new Vector3();
  */
 export class CameraRig {
   constructor(domElement) {
+    const viewport = measureViewport(domElement);
     this.camera = new PerspectiveCamera(
       settings.camera.fov,
-      window.innerWidth / window.innerHeight,
+      viewport.width / viewport.height,
       0.1,
       400
     );
@@ -76,6 +78,29 @@ export class CameraRig {
   }
 
   /** Point the rig should orbit around (character position). */
+  /**
+   * Point the orbit at a given pitch and heading, once.
+   *
+   * OrbitControls keeps its angles implicitly, in the camera's position — there
+   * is no angle to assign — so the position is placed on the sphere and the
+   * controls are asked to re-derive from it. Used to open on a framing rather
+   * than on whatever the constructor happened to hard-code.
+   *
+   * @param {number} polar   radians from straight up; larger looks more level
+   * @param {number} azimuth radians around
+   */
+  setOrbit(polar, azimuth) {
+    const target = this.controls.target;
+    const clamped = MathUtils.clamp(polar, this.controls.minPolarAngle, this.controls.maxPolarAngle);
+    const radius = this.distance;
+    this.camera.position.set(
+      target.x + radius * Math.sin(clamped) * Math.sin(azimuth),
+      target.y + radius * Math.cos(clamped),
+      target.z + radius * Math.sin(clamped) * Math.cos(azimuth)
+    );
+    this.controls.update();
+  }
+
   setAnchor(x, y, z) {
     this.anchor.set(x, y, z);
   }

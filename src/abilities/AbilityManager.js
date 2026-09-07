@@ -75,9 +75,11 @@ export class AbilityManager {
    * @param {THREE.Vector3} origin     on the floor
    * @param {THREE.Vector3} direction  unit, flat
    * @param {number} distance          metres
+   * @param {string} element           ability id
+   * @param {object|null} overrides    per-cast parameter patch (spoken modifiers)
    * @returns {import('./Ability.js').Ability|null}
    */
-  cast(origin, direction, distance, element = this.selected) {
+  cast(origin, direction, distance, element = this.selected, overrides = null) {
     if (!ABILITY_TYPES[element]) return null;
 
     // Retire the oldest cast rather than letting the scene grow without bound.
@@ -88,7 +90,7 @@ export class AbilityManager {
     }
 
     const ability = this.pools.get(element).acquire();
-    ability.spawn(origin, direction, distance);
+    ability.spawn(origin, direction, distance, overrides);
     this.active.push(ability);
     return ability;
   }

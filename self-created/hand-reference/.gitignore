@@ -1,0 +1,8 @@
+# What people upload. Reference photographs of someone's hands are not
+# source, and they are not ours to redistribute — the poses derived from
+# them are what ends up in the repository.
+photos/
+
+# The secret that guards the endpoint, and the tunnel URL that carries it.
+.token
+.url

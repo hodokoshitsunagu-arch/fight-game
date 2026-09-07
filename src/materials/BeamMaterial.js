@@ -542,8 +542,8 @@ export function createBeamMaterial(pass = BeamPass.CORE) {
    * @param {object} state { origin, target, side, progress, fade, widthFade,
    *                         charge, seed, coils, rings }
    */
-  material.userData.sync = (state) => {
-    const c = settings.beam;
+  material.userData.sync = (state, cfg = settings.beam) => {
+    const c = cfg;
     const g = settings.global;
     const u = material.uniforms;
 

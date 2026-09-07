@@ -251,6 +251,18 @@ export const settings = {
   },
 
   player: {
+    /*
+     * Mana. Added with the status bar — the project had health and no second
+     * resource, and a bar that never moves is not a readout.
+     *
+     * `manaBlocksCasting` is off by default on purpose: this build exists to
+     * say a spell and watch it happen, and a resource that can refuse that is a
+     * worse trade than a bar that sometimes sits empty.
+     */
+    maxMP: 120,
+    manaRegen: 14, // per second
+    castCost: 18,
+    manaBlocksCasting: false,
     maxHP: 300,
     respawnDelay: 8,
     respawnHealthPercent: 0.6,
@@ -309,6 +321,97 @@ export const settings = {
     }
   },
 
+  /*
+   * Behaviours, as opposed to statistics.
+   *
+   * The four archetypes already differ in health and speed; what they all do is
+   * walk straight at you. These two change the decision rather than the number,
+   * which is what a low-pressure level actually needs — something to look at,
+   * and something to practise on.
+   */
+  /*
+   * Encounter pacing.
+   *
+   * The dial that matters most is `restSeconds`. Maintaining a population means
+   * the field is never clear and the pressure never stops, however weak each
+   * enemy is; a gap between batches is what makes the same fight feel unhurried,
+   * because you can see the end of the thing you are in.
+   */
+  /*
+   * The campaign.
+   *
+   * Only the numbers live here; the levels themselves are content and live in
+   * `src/campaign/campaign.js`. The split is the same one `scenes.js` makes —
+   * a copy edit and a timing tweak should not land in the same file.
+   */
+  campaign: {
+    enabled: true,
+
+    /* --- the relic shard --- *
+     * Placement is bounded by the locked pitch. The view is a level slice, so
+     * a shard has to sit near eye height at middle distance to be on screen at
+     * every aspect ratio, and at a bearing far enough off-centre that it has to
+     * be turned towards rather than simply noticed.
+     */
+    shardHeight: 1.35,        // metres — just under the 1.68m eyeline
+    shardMinDistance: 14,
+    shardMaxDistance: 26,
+    shardMinBearing: 0.9,     // radians off the current view, so it is a turn
+    shardMaxBearing: 2.5,     // ...but never quite straight behind
+
+    /* --- pacing --- */
+    collectPause: 1.2,        // beat between picking it up and moving on
+    beatSeconds: 3.4,         // how long a story line stays up
+    transitionSeconds: 1.6,   // chapter fade, each way
+    introSeconds: 4.0         // the card shown on arriving somewhere new
+  },
+
+  encounter: {
+    batchSize: 5,
+    restSeconds: 6,      // the pause between batches — the low-pressure dial
+    openingDelay: 3,     // nothing lands the instant the scene loads
+    arrivalStagger: 0.7, // five at once is a wall; five over three seconds is a group
+
+    /* --- where they come from --- */
+    minDistance: 34,
+    maxDistance: 70,
+    spread: 0.9,         // radians either side of the view
+    behindEvery: 4,      // one in four from behind, so it is not a shooting gallery
+
+    /* --- how many at once --- *
+     * Split deliberately: something behind you cannot be aimed at or avoided,
+     * so it should not count against the same budget as something you can see.
+     */
+    viewArc: 1.6,        // radians counted as "in front"
+    maxInView: 3,
+    maxOutOfView: 2,
+
+    /*
+     * Who turns up, as a repeating list.
+     *
+     * This is the encounter design. A level teaches one thing at a time, so the
+     * list is the thing to edit — nothing in `DummyField` needs to change to
+     * build a different fight. `wanderer` circles and barely threatens;
+     * `sentry` stands still until hit, which makes it something to practise on.
+     */
+    roster: [
+      { archetype: 'normal', behaviour: 'chase' },
+      { archetype: 'normal', behaviour: 'wanderer' },
+      { archetype: 'runner', behaviour: 'chase' },
+      { archetype: 'normal', behaviour: 'sentry' },
+      { archetype: 'tank', behaviour: 'chase' }
+    ]
+  },
+
+  enemyBehaviour: {
+    // Radians the wanderer's heading is swung off the direct line. Near a
+    // quarter turn it circles; at zero it is an ordinary chaser.
+    wanderSwing: 1.15,
+    wanderSpeed: 0.55,
+    // How long a ring sits on the ground before something walks out of it.
+    telegraphSeconds: 1.5,
+  },
+
   enemyTraits: {
     berserk: { speedMultiplier: 1.5, threshold: 0.3 },
     heavy: { knockbackTaken: 0.2 },
@@ -363,6 +466,15 @@ export const settings = {
   /* Monster horde                                                      */
   /* ------------------------------------------------------------------ */
   enemy: {
+    /*
+     * Never leave the ground.
+     *
+     * Enemies already walk at y = 0; the only thing that lifts them is knockback,
+     * which throws them upward. Over a photographed street a body hanging in the
+     * air has nothing to explain it, so the vertical component is dropped and the
+     * push stays horizontal — the shove still reads, it just stays on the road.
+     */
+    stayGrounded: true,
     enabled: true,
     maxAlive: 100,
     prewarm: 100,
@@ -2076,6 +2188,81 @@ export const settings = {
     minPolar: 0.35,
     maxPolar: 1.32,
     fov: 46,
+    /* --- first person --------------------------------------------------- *
+     * The camera stops orbiting a body and becomes the eyes. OrbitControls
+     * cannot express that — it is defined by a target and a radius — so the
+     * look is owned by `FirstPersonView` and these are its numbers.
+     */
+    firstPerson: true,
+    eyeHeight: 1.68,   // metres, roughly a standing adult's eyeline
+    lookSpeed: 1.0,
+    /*
+     * Vertical look is off.
+     *
+     * Against a photographed street the horizon is fixed by the panorama, and
+     * every degree of pitch slides the ground plane out of agreement with it —
+     * things standing at y = 0 start to float or sink. Holding the view level
+     * keeps the two grounds locked together, and swiping becomes purely a turn.
+     */
+    lockPitch: true,
+    pitchLimit: 78,    // degrees either side of level, when pitch is unlocked
+    handBob: 1.0,      // 0 stills the hands entirely
+
+    /*
+     * The first-person hand animation layer.
+     *
+     * Blend rates are asymmetric on purpose: a gesture has to be *on* almost
+     * immediately or the cast has already left before the hands move, while
+     * fading out slowly is what reads as follow-through rather than as the
+     * animation being switched off.
+     */
+    hands: {
+      /*
+       * Which visual tier the hands are built from.
+       *
+       * `procedural` is boxes and capsules with flat colours — no files, no
+       * network, no way to fail, and the floor this never drops below.
+       * `high` swaps in rounder geometry, two-jointed fingers and a textured
+       * skin material, and falls back to the procedural materials by itself if
+       * the textures do not arrive. The animation is identical either way.
+       */
+      fidelity: 'high',
+
+      /*
+       * How far the implicit pass rounds the joins, metres. 0 turns it off.
+       *
+       * The sweep gives every joint a crease where two tubes cross; a
+       * smooth-minimum union gives it a fillet, and this is how wide that
+       * fillet is. It is bounded from above by anatomy rather than by taste:
+       * the narrowest gap between two adjacent proximal phalanges is 1.8mm, so
+       * much past 2mm and the index and middle fingers weld — which is the
+       * exact failure that ruled out building the whole mesh this way.
+       */
+      blend: 0.0015,
+
+      /*
+       * An optional rigged hand from a file — a URL to a .glb, or null.
+       *
+       * Nothing ships with the build. There is no rigged human hand in the
+       * glTF sample set under a licence that allows redistribution (the skinned
+       * samples are CC-BY or under a Poser EULA, and the one CC0 skinned model
+       * is two triangles), so bundling one would mean asserting a licence that
+       * cannot be verified from here.
+       *
+       * Point this at a model you have the rights to and `HandRetarget` works
+       * out which bones are which and, from the model's own geometry, which way
+       * each one bends — so a rig whose bones run along +y still curls toward
+       * its own palm. If it fails to load, the built-in hands stay.
+       */
+      model: null,
+
+      blendIn: 16,      // per second, toward full weight
+      blendOut: 7,      // ...and back down, deliberately slower
+      // Even the worst-pronounced cast still throws a real gesture; scaling a
+      // motion to nothing would read as the hands failing, not the player.
+      minStrength: 0.55
+    },
+
     targetHeight: 1.35,
     damping: 0.06,
     autoFrame: 0.35 // how strongly the rig drifts toward an active cast
@@ -2103,6 +2290,144 @@ export const settings = {
     rimElevation: 0.35,
     envIntensity: 0.32,
     backgroundColor: '#121820',
+
+    /* --- backdrop --------------------------------------------------- *
+     * `flat` keeps the authored void the stage was tuned against.
+     * `panorama` shows the equirectangular probe that is already loaded for
+     * image-based lighting, so switching costs no extra asset and no extra
+     * draw call — the background is a full-screen pass at infinite distance,
+     * which also means it never parallaxes as the character walks.
+     */
+    /*
+     * How much of the 400m floor plane to keep. Fog hides it past ~135m, so
+     * anything beyond that is invisible surface that still occludes whatever is
+     * behind it — which against a panorama backdrop is the whole city.
+     */
+    floorScale: 1.0,
+    /*
+     * Draw the floor as shadows only — transparent apart from what falls on it.
+     *
+     * For a backdrop that is genuinely behind the scene (Street View), an
+     * opaque floor is the one thing blocking it. This keeps the figures
+     * grounded without keeping the plane.
+     */
+    floorShadowOnly: false,
+    floorShadowOpacity: 0.42,
+    backgroundMode: 'flat', // 'flat' | 'panorama' | 'streetview'
+    /*
+     * Street View backdrop.
+     *
+     * Rendered by Google's own viewer in a DOM layer behind a transparent
+     * canvas — the imagery is never fetched or stored by us, which is what the
+     * Maps Platform terms require. Needs a Maps JavaScript API key and bills
+     * per load, so it is opt-in.
+     */
+    streetViewLat: 40.758,   // Times Square
+    streetViewLng: -73.9855,
+    /*
+     * Height of Street View's own camera above the road, metres.
+     *
+     * This is what aligns the two worlds. Street View projects a sphere from
+     * roughly the roof of a car; the game projects a plane at y = 0. Put the
+     * game camera at the same height above its plane and the two grounds
+     * coincide, so a figure standing at y = 0 stands on the street rather than
+     * hovering over it or sinking into it.
+     */
+    streetViewEyeHeight: 2.5,
+    // Degrees below level. Zero puts the horizon exactly across the middle,
+    // which is where Street View's is, and is what keeps the plane aligned.
+    streetViewPitch: 6,
+    // Hide scene furniture that has no business standing in a real street.
+    streetViewHideRelicBase: true,
+    /*
+     * Metres of walking that buy one step down the street.
+     *
+     * Street View is a graph of capture points roughly ten metres apart, not a
+     * continuous space, so movement is discrete however it is driven. Too small
+     * a threshold and every footfall teleports; too large and walking feels
+     * like it does nothing.
+     */
+    streetViewStepMetres: 5,
+    /*
+     * Warm the panorama straight ahead.
+     *
+     * With double buffering a step is no longer black, but it still waits. The
+     * only way to make it instant is to have the destination already up in the
+     * idle viewer — so after each move the forward-most exit is loaded there,
+     * and stepping that way becomes a cross-fade with nothing to download.
+     *
+     * The costs, stated rather than buried: it is one extra billed panorama
+     * load per move, wasted whenever the player turns instead; and it loads a
+     * panorama nobody asked for, which is a speculative fetch by any reading.
+     * Limited to the single most likely exit for both reasons — never the whole
+     * junction. Set false to pay neither.
+     */
+    streetViewPreloadAhead: true,
+    /*
+     * Where the backdrop comes from.
+     *
+     * Empty means reuse the lighting probe, which costs nothing extra. Point it
+     * at a file to use a dedicated panorama instead — the two wants are
+     * genuinely different: lighting needs high dynamic range and survives being
+     * low-resolution, while a backdrop needs resolution and barely cares about
+     * range. Keeping them separate means an 8K JPG can be the sky without
+     * anyone trying to light a scene with it, and without shipping an 8K HDR.
+     *
+     * `.hdr` loads through the HDR loader; `.jpg` / `.png` / `.webp` load as
+     * sRGB textures. Drop a file in `public/` and name it here.
+     */
+    panoramaUrl: '', // e.g. './hdri/city_8k.jpg'
+    // Vertical trim, degrees. A generated panorama is not always level, and a
+    // horizon a few degrees off reads immediately as wrong.
+    backgroundTilt: 0,
+
+    /* --- parallax ---------------------------------------------------- *
+     * A panorama drawn as `scene.background` sits at infinite distance, so it
+     * cannot shift as the camera orbits — which is exactly what makes a city
+     * backdrop read as painted-on. With a depth map the same panorama is drawn
+     * as displaced geometry instead, and near blocks sweep past far ones for
+     * free. Costs one draw call and ~65k triangles; see `SkyDome`.
+     *
+     * Off by default: it is only worth its cost with a depth map that matches
+     * the panorama.
+     */
+    parallax: false,
+    // 0 flattens the scene back onto the far shell, 1 is the depth map as
+    // measured. Above 1 exaggerates, which reads as a miniature.
+    parallaxScale: 1.0,
+    /*
+     * How far out to place the panorama's world.
+     *
+     * The panorama is authored around a 30-metre city; the play floor reaches
+     * 200 metres and would bury it. Scaling distances uniformly moves the city
+     * clear of the floor without altering a pixel of it — angular size does not
+     * change, because it is the same image. The cost is parallax, which falls
+     * off with distance, so this is the dial that trades one against the other.
+     */
+    parallaxWorldScale: 9.0,
+    // Empty derives `<panorama>_depth.<ext>` from `panoramaUrl`.
+    depthUrl: '',
+    // Must match the encoder: disparity = near / distance.
+    depthNear: 4.0,
+    // The generator's road fades out around 170m, so anything past this is
+    // sky. Kept tight because it also sets where the shell sits, and the camera
+    // has to be able to see that far.
+    depthFar: 170.0,
+    backgroundIntensity: 0.85, // exposure of the backdrop alone
+    // Blur hides the seams of a low-resolution probe and stops a busy sky from
+    // competing with the effects, which are the thing worth looking at.
+    backgroundBlur: 0.06,
+    backgroundRotation: 0, // degrees, to swing the panorama's sun onto the scene's
+    // Fog is what welds the floor to the backdrop. Against the flat void the
+    // authored colour matches exactly; against a panorama it has to come from
+    // the panorama's own horizon or a hard seam appears at the floor edge.
+    fogFromHorizon: true,
+    /*
+     * Where to read that colour, as a fraction of image height below the
+     * equator. The floor fades into the panorama's ground, so the ground is
+     * what it has to match — sampling the horizon itself picks up the sky.
+     */
+    fogHorizonOffset: 0.07,
     // Fog is pulled well back so it only dissolves the far edge of the floor into
     // the backdrop rather than sitting on top of the action. Toggle and range are
     // both live in the editor (Environment → Backdrop, fog & dust).
@@ -2155,6 +2480,66 @@ export const settings = {
     // window resizes.
     distortion: 0.045,
     flashStrength: 1.0
+  },
+
+  /* ------------------------------------------------------------------ */
+  /* Voice casting                                                       */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Spoken spellcasting. Lives here like everything else so the magnitudes are
+   * live-tunable from the editor — which is the only sane way to dial in what
+   * "greater" should mean, since the answer is a look, not a number.
+   */
+  voice: {
+    enabled: true,
+    lang: 'en-US', // 'en-US' | 'zh-CN'. A toggle: the recogniser hears one at a time.
+    pushToTalkKey: 'Space', // held to listen; nothing is heard otherwise
+    confidence: 0.35, // interim results below this are ignored
+    // Fire as soon as the distinguishing token is recognised rather than waiting
+    // for the final transcript. This is what hides most of the recogniser's
+    // latency — the cast starts while you are still speaking.
+    fireOnInterim: true,
+    // How long after a cast trailing modifiers still reach it, seconds.
+    mutationWindow: 2.5,
+    // Multipliers each modifier applies to the fields it matches.
+    scaleUp: 1.85,
+    scaleDown: 0.55,
+    tempoFast: 1.6,
+    tempoSlow: 0.6,
+    durationLong: 1.9,
+    durationShort: 0.5,
+    intensityUp: 1.9,
+    intensityDown: 0.45,
+    // A field never moves further than this from its authored value, so a
+    // modifier can never push an effect somewhere it was never tuned to go.
+    clampLow: 0.15,
+    clampHigh: 4.0,
+
+    /*
+     * Scoring every utterance.
+     *
+     * A cast that fired is never taken back — the spell already left your
+     * hands, and cancelling it half a second later on the recogniser's opinion
+     * would feel like the game breaking rather than the player missing. It is
+     * scaled instead, so the feedback lands in the effect you are already
+     * watching.
+     */
+    scoring: {
+      enabled: true,
+      passMark: 0.6,
+      /*
+       * How far the recogniser's confidence can move a score, either way.
+       *
+       * The score is led by how close the words were to the spell's name and
+       * only trimmed by confidence. An even blend got both interesting cases
+       * backwards — a confident mishearing passed, a clear phrase in a noisy
+       * room failed — so confidence is a modifier here, never the gate.
+       */
+      confidenceInfluence: 0.3,
+      minScale: 0.65,   // what the worst recognised cast comes out at
+      maxScale: 1.15,   // ...and the best, a step above the tuned baseline
+      strikesBeforeHelp: 3
+    }
   }
 };
 

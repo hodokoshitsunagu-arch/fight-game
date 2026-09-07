@@ -33,6 +33,7 @@ export class Editor {
 
     this._buildPresets();
     this._buildGlobal();
+    this._buildVoice();
     this._buildAim();
     this._buildZone();
     buildShowcaseEditors(this.gui);
@@ -253,6 +254,45 @@ export class Editor {
     R(lighting, g, 'animationSpeed', 0, 3, 0.01, 'animation speed');
 
     this.globalFolder = folder;
+  }
+
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Spoken casting.
+   *
+   * The magnitudes matter more than they look: "greater" is a look, not a
+   * number, and the only way to find the right multiplier is to say the word
+   * and watch. These bind live like every other control, so they can be dialled
+   * in between casts — or during one, since an ability re-reads its parameters
+   * every frame.
+   */
+  _buildVoice() {
+    const folder = this.gui.addFolder('\u2726  Voice');
+    const v = settings.voice;
+    const R = Editor.range;
+
+    folder.add(v, 'enabled').name('enabled');
+    folder.add(v, 'lang', { English: 'en-US', '\u4e2d\u6587': 'zh-CN' }).name('language');
+    folder.add(v, 'fireOnInterim').name('fire while speaking');
+    R(folder, v, 'confidence', 0, 1, 0.01, 'confidence floor');
+    R(folder, v, 'mutationWindow', 0, 6, 0.1, 'late modifier window (s)');
+
+    const magnitudes = folder.addFolder('What the words mean');
+    R(magnitudes, v, 'scaleUp', 1, 4, 0.05, 'greater');
+    R(magnitudes, v, 'scaleDown', 0.1, 1, 0.05, 'lesser');
+    R(magnitudes, v, 'tempoFast', 1, 4, 0.05, 'swift');
+    R(magnitudes, v, 'tempoSlow', 0.1, 1, 0.05, 'slow');
+    R(magnitudes, v, 'durationLong', 1, 4, 0.05, 'lingering');
+    R(magnitudes, v, 'durationShort', 0.1, 1, 0.05, 'fleeting');
+    R(magnitudes, v, 'intensityUp', 1, 4, 0.05, 'brilliant');
+    R(magnitudes, v, 'intensityDown', 0.1, 1, 0.05, 'dim');
+
+    const limits = folder.addFolder('Limits');
+    R(limits, v, 'clampLow', 0.02, 1, 0.01, 'floor (x authored)');
+    R(limits, v, 'clampHigh', 1, 8, 0.1, 'ceiling (x authored)');
+
+    this.voiceFolder = folder;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1571,6 +1611,35 @@ export class Editor {
     const folder = this.gui.addFolder('Environment');
     const e = settings.environment;
     const R = Editor.range;
+
+    /*
+     * Backdrop.
+     *
+     * `panorama` reuses the equirectangular probe already loaded for lighting,
+     * so it costs no extra asset and no extra draw call. It is off by default:
+     * the stage was tuned against the flat void, and a busy sky competes with
+     * the effects. This folder is here to judge that trade-off live rather than
+     * by argument.
+     */
+    const backdrop = folder.addFolder('Backdrop');
+    backdrop.add(e, 'backgroundMode', ['flat', 'panorama']).name('mode');
+    R(backdrop, e, 'floorScale', 0.1, 1, 0.01, 'floor size (trim to reveal)');
+    backdrop.add(e, 'floorShadowOnly').name('floor: shadows only');
+    R(backdrop, e, 'floorShadowOpacity', 0, 1, 0.01, 'shadow strength');
+    R(backdrop, e, 'backgroundIntensity', 0, 3, 0.01, 'exposure');
+    R(backdrop, e, 'backgroundBlur', 0, 1, 0.01, 'blur');
+    R(backdrop, e, 'backgroundRotation', 0, 360, 1, 'rotation (deg)');
+    R(backdrop, e, 'backgroundTilt', -20, 20, 0.5, 'tilt (deg)');
+    backdrop.add(e, 'fogFromHorizon').name('fog from horizon');
+    R(backdrop, e, 'fogHorizonOffset', -0.2, 0.3, 0.01, 'sample below horizon');
+
+    // Parallax only does anything with a depth map loaded; see App.load.
+    const parallax = backdrop.addFolder('Parallax (needs depth map)');
+    parallax.add(e, 'parallax').name('enabled');
+    R(parallax, e, 'parallaxScale', 0, 2, 0.01, 'strength');
+    R(parallax, e, 'parallaxWorldScale', 1, 30, 0.5, 'world scale (push out)');
+    R(parallax, e, 'depthNear', 0.5, 20, 0.1, 'disparity near (m)');
+    R(parallax, e, 'depthFar', 50, 1000, 10, 'far clamp (m)');
 
     R(folder, e, 'sunIntensity', 0, 8, 0.01, 'key intensity');
     folder.addColor(e, 'sunColor').name('key colour');

@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "test": "node --test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:city-routes": "node self-created/verify-city-chapters.mjs"
   },
   "dependencies": {
     "lil-gui": "^0.21.0",

@@ -354,8 +354,8 @@ export function createLightningMaterial(pass = BoltPass.CORE) {
    *
    * @param {object} state { origin, target, side, progress, fade, seed, strands }
    */
-  material.userData.sync = (state) => {
-    const c = settings.thunder;
+  material.userData.sync = (state, cfg = settings.thunder) => {
+    const c = cfg;
     const g = settings.global;
     const u = material.uniforms;
 

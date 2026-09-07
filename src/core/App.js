@@ -35,6 +35,23 @@ import { WaveState } from '../gameplay/WaveManager.js';
 import { RelicController } from '../gameplay/RelicController.js';
 import { PostProcessing } from '../postprocessing/PostProcessing.js';
 
+import { VoiceController } from '../voice/VoiceController.js';
+import { DummyField } from '../sandbox/DummyField.js';
+import { CampaignDirector } from '../campaign/CampaignDirector.js';
+import { CulturalCampaignDirector } from '../campaign/CulturalCampaignDirector.js';
+import { RelicShard } from '../campaign/RelicShard.js';
+import { CampaignHUD } from '../ui/CampaignHUD.js';
+import { InteractionHUD } from '../ui/InteractionHUD.js';
+import { SpawnTelegraph } from '../sandbox/SpawnTelegraph.js';
+import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
+import { SceneSelector } from '../ui/SceneSelector.js';
+import { MiniMap } from '../ui/MiniMap.js';
+import { StatusBar } from '../ui/StatusBar.js';
+import { FirstPersonView } from './FirstPersonView.js';
+import { FirstPersonHands } from '../world/FirstPersonHands.js';
+import { Mana } from '../gameplay/Mana.js';
+import { SCENES, DEFAULT_SCENE, findScene } from '../config/scenes.js';
+import { VoiceHUD } from '../ui/VoiceHUD.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { DamageNumbers } from '../ui/DamageNumbers.js';
 import { Editor } from '../ui/Editor.js';
@@ -65,6 +82,20 @@ export class App {
     this.paused = false;
     this.hitStopRemaining = 0;
     this._raf = 0;
+
+    /**
+     * Sandbox is the default: a spell playground driven by voice, with practice
+     * dummies and no waves. `?game` restores Relic: Last Stand.
+     *
+     * Nothing about the horde game is deleted to get here — spoken casting has
+     * a recogniser latency floor of several hundred milliseconds, which is fine
+     * in a playground and wrong in a wave-survival loop, so the two modes want
+     * different hosts rather than one compromised one.
+     */
+    this.sandbox =
+      typeof window === 'undefined' || !new URLSearchParams(window.location.search).has('game');
+    this.campaignVersion = typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('campaign') === 'v2' ? 2 : 1;
 
     /**
      * Seconds left before each ability can be armed again. Per element, so
@@ -193,6 +224,93 @@ export class App {
         }
       }
     });
+    /* ---- sandbox: dummies + voice ---- */
+    if (this.sandbox) {
+      this.gameUI.setSandbox(true);
+      this.spawnTelegraph = new SpawnTelegraph(this.scene);
+      this.dummies = new DummyField(this.enemies, { telegraph: this.spawnTelegraph });
+      this.shard = new RelicShard(this.scene);
+      this.campaignHUD = new CampaignHUD(document.body);
+      this.interactionHUD = this.campaignVersion === 2 ? new InteractionHUD(document.body) : null;
+      this.mana = new Mana();
+      this.statusBar = new StatusBar(document.body);
+
+      /*
+       * First person. The body comes off and the camera goes where its head
+       * was — you cannot see your own model from inside it, and leaving it
+       * rendered means looking at the inside of a torso.
+       */
+      if (settings.camera.firstPerson) {
+        this.firstPerson = new FirstPersonView(this.camera, canvas);
+        this.firstPerson.enabled = true;
+        this.hands = new FirstPersonHands(this.camera);
+        this.hands.setVisible(true);
+        /*
+         * The camera has to join the scene graph.
+         *
+         * three renders what is under the scene, and a camera is not under it by
+         * default — so anything parented to the camera is never traversed and
+         * never drawn. The hands were built, visible, and on a layer the camera
+         * could see, and still nothing appeared.
+         */
+        this.scene.add(this.camera);
+        this.character.root.visible = false;
+        /*
+         * And the relic goes. In third person it was the centrepiece the fight
+         * happened around; in first person the camera stands exactly where it
+         * is, so it renders as a cyan band across the middle of the view — you
+         * are inside it.
+         */
+        this.relic.root.visible = false;
+        // OrbitControls and a first-person look would fight over the same
+        // pointer and the same camera every frame.
+        this.rig.controls.enabled = false;
+        /*
+         * A press that never became a drag is an aim — unless there is a relic
+         * shard under it. The shard is offered the tap first and consumes it on
+         * a hit, so picking one up never also throws a spell at it.
+         */
+        this.firstPerson.onTap = (event) => {
+          if (this.shard?.tryPick(event, this.camera, canvas)) return;
+          this.aim.confirm();
+        };
+        // Dummies arrive from wherever the view is pointing.
+        this.dummies.getFacing = () => this.firstPerson.yaw + Math.PI;
+      }
+      this.voiceHUD = new VoiceHUD(document.body);
+      this.voice = new VoiceController({
+        abilities: this.abilities,
+        camera: this.camera,
+        enemies: this.enemies,
+        character: this.character,
+        canCast: (element) =>
+          this.canControl && this._isUnlocked(element) && (this.cooldowns.get(element) ?? 0) <= 0,
+        // Reuse the keyboard cast's own follow-through, so a spoken cast throws
+        // the body and burns the cooldown exactly like a clicked one.
+        onCast: (element) => {
+          this.mana?.spend();
+          /*
+           * The gesture is chosen by the spell and sized by how it was said.
+           * A score arrives a moment later on the final result, so the throw
+           * opens at full strength and the *next* one carries the verdict —
+           * scaling this one retroactively would rewind a motion already on
+           * screen.
+           */
+          this.hands?.cast(element, this.voice?.lastScore?.score ?? 1);
+          this.selectAbility(element);
+          this.cooldowns.set(element, this._cooldownFor(element));
+          this.character.setFacing(this.voice.targets.yaw);
+          this.character.playCast(settings[element].castAnim);
+          this.character.castLunge();
+        }
+      });
+      this._bindVoice();
+      this._buildCampaign();
+      // Every judged utterance reaches the campaign, which owns the strike
+      // count and decides when the advice on screen needs to change.
+      this.voice.on('score', (result) => this.campaign?.noteScore(result));
+    }
+
     this.combat.setUpgradeManager(this.session.upgrades);
     this.selfAbilities.setUpgradeManager(this.session.upgrades);
     this.gameUI.bind(this.session);
@@ -216,6 +334,30 @@ export class App {
   /** The ability currently in the slot. */
   get element() {
     return this.abilities.selected;
+  }
+
+  /*
+   * Session gating, routed through one place.
+   *
+   * The sandbox runs without a `GameSession`, and an unstarted session reports
+   * `canControl === false` and `simulationScale === 0` — correct for a game
+   * waiting on its Play button, and completely wrong for a spell playground.
+   * Reading these three through the app instead of the session is what lets
+   * sandbox mode opt out without a conditional at every call site.
+   */
+
+  /** Whether the player may cast right now. */
+  get canControl() {
+    return this.sandbox ? true : this.session.canControl;
+  }
+
+  /** Simulation time multiplier; the sandbox always runs. */
+  get simulationScale() {
+    return this.sandbox ? 1 : this.session.simulationScale;
+  }
+
+  get isRunning() {
+    return this.sandbox ? true : this.session.isRunning;
   }
 
   /* ------------------------------------------------------------------ */
@@ -264,7 +406,7 @@ export class App {
 
     switch (action) {
       case 'ability': {
-        if (!this.session.canControl) return;
+        if (!this.canControl) return;
         const element = ELEMENTS.includes(abilityId) ? abilityId : this.element;
         // Pressing the *same* key again puts an armed cast away, as it does in a
         // MOBA; pressing a different one swaps the slot without disarming.
@@ -273,7 +415,7 @@ export class App {
         break;
       }
       case 'selfAbility':
-        if (!this.session.canControl) return;
+        if (!this.canControl) return;
         this.castSelfAbility(abilityId);
         break;
       case 'cancel':
@@ -290,13 +432,13 @@ export class App {
         this.hud.showToast('Effects cleared');
         break;
       case 'togglePause':
-        if (!this.session.isRunning) return;
+        if (!this.isRunning) return;
         this.paused = !this.paused;
         this.hud.setPaused(this.paused);
         this.hud.showToast(this.paused ? 'Paused — the editor still applies' : 'Resumed');
         break;
       case 'spawnHorde':
-        if (this.session.isRunning) this.spawnHorde(50);
+        if (this.isRunning) this.spawnHorde(50);
         break;
       default:
         break;
@@ -330,9 +472,522 @@ export class App {
     this.hud.setElement(element, options);
   }
 
+  /**
+   * Put Street View behind the scene, or say clearly why it is not there.
+   *
+   * Failing to a black screen would be the worst outcome: a missing key, a
+   * referer-restricted key and a location with no coverage all look identical
+   * from the outside, and each needs a different fix. So a failure names itself
+   * and the flat stage stays up.
+   */
+  async _startStreetView(key) {
+    const env = settings.environment;
+    this.streetView = new StreetViewBackdrop({
+      key,
+      position: { lat: env.streetViewLat, lng: env.streetViewLng }
+    });
+
+    const ok = await this.streetView.load();
+    if (!ok) {
+      // Keep the reason reachable. Disposing the object was destroying the only
+      // evidence of why it failed, which made every failure look the same from
+      // the console.
+      this.streetViewError = this.streetView.error;
+      this.streetView.dispose();
+      this.streetView = null;
+      console.warn('[streetview] not shown:', this.streetViewError);
+      this._showStreetViewNotice(key ? 'failed' : 'no-key');
+      return;
+    }
+
+    env.backgroundMode = 'streetview';
+    env.parallax = false;
+    // Clear to nothing so the viewer behind the canvas is what gets seen.
+    this.renderer.gl.setClearAlpha(0);
+    // The void's fog would paint a grey wall over a street that is genuinely
+    // right there.
+    env.fogEnabled = false;
+    /*
+     * Shadows only. The backdrop is genuinely behind the scene, so an opaque
+     * floor is the one thing that can block it — and it blocked the whole
+     * bottom of the frame. Kept large now that it is invisible, because its
+     * only remaining job is to be big enough to catch what falls on it.
+     */
+    /*
+     * The eyes go where the panorama's camera was.
+     *
+     * Street View projects its sphere from roughly 2.5m above the road, and the
+     * game draws its ground at y = 0. The two grounds coincide only when the
+     * camera stands the same height above y = 0 — at a person's 1.68m the plane
+     * sits 0.8m above the photographed street, and everything standing on it
+     * floats by exactly that much. Matching the capture height is what puts
+     * their feet on the pavement.
+     */
+    settings.camera.eyeHeight = env.streetViewEyeHeight;
+
+    env.floorShadowOnly = true;
+    env.floorScale = 0.6;
+    env.ambientIntensity = 0.45;
+    settings.camera.distance = 10;
+
+    /*
+     * The relic's base is a 4.3-metre near-black disc, and it was the dark
+     * shape still sitting around the player once the floor went transparent.
+     * The core stays — it is the thing the spells are cast around — but a
+     * plinth has no business standing in a real street.
+     */
+    if (env.streetViewHideRelicBase) this.relic.base.visible = false;
+
+    this._alignCameraToStreet();
+    this._buildSceneSelector();
+    this._buildMiniMap();
+  }
+
+  /**
+   * The companion map.
+   *
+   * Street View alone shows none of position, facing or exits — it is a sphere,
+   * with no horizon to orient against and no sign that walking is possible until
+   * you try it. Costs one Dynamic Maps load on top of the Street View request,
+   * which is why it is created once for the session rather than per scene.
+   */
+  _buildMiniMap() {
+    if (!window.google?.maps) return;
+    this.miniMap = new MiniMap(document.body);
+    const survey = this.streetView.survey();
+    this.miniMap.attach(window.google.maps, survey?.position ?? {
+      lat: settings.environment.streetViewLat,
+      lng: settings.environment.streetViewLng
+    });
+    if (survey) this.miniMap.setPosition(survey.position, survey.links);
+    this._miniMapPano = survey?.pano ?? null;
+
+    // Tapping an exit on the map is the precise move; swiping the screen is the
+    // coarse one. Both end up in the same step.
+    this.miniMap.onStepHeading = (heading) => this.streetView.step(heading);
+
+    /*
+     * Walking is a swipe now, not a pad.
+     *
+     * The pad took a corner of a small screen to offer four buttons, three of
+     * which were usually the same road, and its enabled state disagreed with
+     * what a step would actually accept — measured as a lit button that
+     * produced no movement. A vertical drag is free (the pitch is locked, so
+     * that axis was discarded) and cannot lie about where it can go, because
+     * it asks the link list directly.
+     */
+    if (this.firstPerson) {
+      this.firstPerson.onWalk = (direction) => this._walk(direction);
+    }
+  }
+
+  /**
+   * Take one step along the street.
+   *
+   * Routed through `stepNearest` rather than `step`, which refuses anything
+   * more than a quarter turn off. For a swipe that refusal is wrong: the
+   * gesture means "go that way", and the honest answer to a road that bends is
+   * the nearest exit, not nothing at all.
+   *
+   * @param {number} direction `+1` forward, `-1` back
+   */
+  _walk(direction) {
+    const sv = this.streetView;
+    if (!sv?.ready) return false;
+    const heading = ((sv.heading ?? 0) + (direction > 0 ? 0 : 180) + 360) % 360;
+    return sv.stepNearest(heading);
+  }
+
+  /**
+   * Keep the map in step with the panorama.
+   *
+   * The heading is written every frame because turning is continuous; the
+   * position only when the panorama id actually changes, since recentring a map
+   * and rebuilding a set of polylines is not something to do sixty times a
+   * second for a value that has not moved.
+   */
+  _updateMiniMap() {
+    if (!this.miniMap?.ready) return;
+    this.miniMap.setHeading(this.streetView.heading ?? 0);
+    const survey = this.streetView.survey();
+    if (!survey || survey.pano === this._miniMapPano) return;
+    this._miniMapPano = survey.pano;
+    this.miniMap.setPosition(survey.position, survey.links);
+  }
+
+
+  /** Where the player is looking, in the convention the field and shard use. */
+  _facing() {
+    return this.firstPerson ? this.firstPerson.yaw + Math.PI : 0;
+  }
+
+  /**
+   * The campaign, wired to the systems it directs.
+   *
+   * The director owns ordering only — it starts waves, places shards and asks
+   * the backdrop to walk. Everything it touches is reached through a public
+   * method that already existed for the sandbox, which is why the whole thing
+   * unit-tests with none of them present.
+   */
+  _buildCampaign() {
+    if (!settings.campaign.enabled) return;
+
+    const Director = this.campaignVersion === 2 ? CulturalCampaignDirector : CampaignDirector;
+    this.campaign = new Director({
+      dummies: this.dummies,
+      shard: this.shard,
+      // A getter, because the backdrop is built later, during `load()`.
+      streetView: () => this.streetView,
+      scenes: SCENES,
+      hud: this.campaignHUD,
+      interactionHUD: this.interactionHUD,
+      getFacing: () => this._facing(),
+      getCurrentSceneId: () => this.scene_?.id ?? null
+    });
+    if (this.interactionHUD) {
+      this.interactionHUD.onSkipCombat = () => this.campaign?.skipCombat?.();
+    }
+
+    /*
+     * Crossing a border is the same operation the scene selector performs, so
+     * it reuses the same follow-through: anything belonging to the old street
+     * has to go, or a spell in flight over Dubai arrives in Sydney.
+     */
+    this.campaign.onLocationChange = (scene) => {
+      if (!scene) return;
+      this.scene_ = scene;
+      settings.environment.streetViewLat = scene.lat;
+      settings.environment.streetViewLng = scene.lng;
+      this.sceneSelector?.setCurrent(scene);
+      this.clearEffects();
+      this.combat.reset();
+      this.damageNumbers.clear();
+      this.character.position.set(0, this.character.position.y, 0);
+      this.character.root.position.set(0, this.character.root.position.y, 0);
+      this.rig.setAnchor(0, 0, 0);
+      this._alignCameraToStreet();
+    };
+
+    // Spells arrive two per level. Casting one you have not been taught yet
+    // would make the teaching order decorative.
+    this.campaign.onUnlocks = (elements) => {
+      this._unlocked = new Set(elements);
+      this.hud?.setUnlocked?.(this._unlocked);
+    };
+  }
+
+  /** Whether an element may be cast — the campaign gates it, free roam does not. */
+  _isUnlocked(element) {
+    if (!this.campaign || this.campaign.state === 'idle') return true;
+    return this._unlocked ? this._unlocked.has(element) : true;
+  }
+
+  /**
+   * The scene list, and what happens when one is chosen.
+   *
+   * Switching is not a camera move: the world changes, so everything that
+   * belonged to the old one has to go. A spell mid-flight over Times Square has
+   * no business arriving in Athens, and the dummies were standing on a street
+   * that no longer exists. The banked walk goes too — it was distance down a
+   * different road.
+   */
+  _buildSceneSelector() {
+    this.sceneSelector = new SceneSelector(document.body);
+    this.sceneSelector.setCurrent(this.scene_ ?? DEFAULT_SCENE);
+
+    this.sceneSelector.onSelect = async (scene) => {
+      const moved = await this.streetView.moveTo(scene.lat, scene.lng, 120);
+      if (!moved) return false;
+
+      this.scene_ = scene;
+      settings.environment.streetViewLat = scene.lat;
+      settings.environment.streetViewLng = scene.lng;
+
+      this.clearEffects();
+      this.combat.reset();
+      this.damageNumbers.clear();
+      this.character.position.set(0, this.character.position.y, 0);
+      this.character.root.position.set(0, this.character.root.position.y, 0);
+      this.rig.setAnchor(0, 0, 0);
+      /*
+       * Jumping by hand is free roam, and free roam is the endless sandbox.
+       * Restarting the campaign's wave here would drop the player into a fight
+       * authored for a street they just left.
+       */
+      if (this.campaign) {
+        this.campaign.stop();
+        this.campaignHUD?.setObjective({ remaining: 0, shard: false });
+        this.campaignHUD?.setHint('');
+        this.sceneSelector.setResumeVisible(true);
+        this.hud?.setUnlocked?.(null);
+      }
+      this.shard?.clear();
+      this.dummies?.start();
+      this._alignCameraToStreet();
+      return true;
+    };
+
+    this.sceneSelector.onResume = () => {
+      if (!this.campaign) return;
+      this.sceneSelector.setResumeVisible(false);
+      this.clearEffects();
+      this.combat.reset();
+      this.damageNumbers.clear();
+      this.campaign.resume();
+    };
+  }
+
+  /**
+   * Walking moves the street, not the player.
+   *
+   * The scene is pinned to the panorama's capture point, so a player who
+   * actually walked away from it would drag the whole fight out of frame while
+   * the backdrop stayed put. Instead the walk is spent on stepping to the next
+   * panorama and the character is returned to the middle — a treadmill, with
+   * the world doing the moving.
+   *
+   * Distance is banked rather than applied per frame because Street View is a
+   * graph of capture points, not a continuous space: there is nowhere to be
+   * between two of them, so the walk accumulates until it is worth a hop.
+   */
+  _walkTheStreet() {
+    const character = this.character;
+    const walked = Math.hypot(character.position.x, character.position.z);
+    if (walked < 0.001) return;
+
+    if (walked < settings.environment.streetViewStepMetres) return;
+
+    // Heading in Street View's terms: clockwise from north.
+    const heading = (Math.atan2(character.position.x, -character.position.z) * 180) / Math.PI;
+    /*
+     * Only recentre if the street actually moved. Resetting on a refused step
+     * swallowed the walk silently: the distance banked, hit the threshold, was
+     * thrown away, and the player stood in the same place having walked seven
+     * metres. A refusal has to leave the banked distance alone so the next
+     * heading gets a turn.
+     */
+    if (!this.streetView.step(heading)) return;
+
+    character.position.set(0, character.position.y, 0);
+    character.root.position.x = 0;
+    character.root.position.z = 0;
+    this.rig.setAnchor(0, 0, 0);
+  }
+
+  /**
+   * Put the game's ground plane on the street.
+   *
+   * Two projections have to agree. Street View draws a sphere from a camera
+   * about 2.5 metres above the road; the game draws a plane at y = 0. They line
+   * up only when the game camera sits at that same height above its own plane
+   * and looks along the same horizon — so height is pinned rather than derived
+   * from the orbit, and pitch is held at a fixed shallow angle instead of
+   * following the mouse.
+   *
+   * Roll is zero and stays zero: `OrbitControls` keeps +Y up, and a horizon that
+   * tilts against a photographed street reads as broken instantly.
+   *
+   * Heading is deliberately left free — turning on the spot is the one camera
+   * move that costs nothing here, because Street View turns with it.
+   */
+  _alignCameraToStreet() {
+    const env = settings.environment;
+    const rig = this.rig;
+    const eye = env.streetViewEyeHeight;
+    const camera = this.camera;
+
+    // Whichever way it is already facing, and how far out it already is.
+    const dx = camera.position.x - rig.anchor.x;
+    const dz = camera.position.z - rig.anchor.z;
+    const radius = Math.max(1, Math.hypot(dx, dz));
+    const heading = Math.atan2(dx, dz);
+
+    camera.position.set(
+      rig.anchor.x + radius * Math.sin(heading),
+      eye,
+      rig.anchor.z + radius * Math.cos(heading)
+    );
+    camera.up.set(0, 1, 0);
+    camera.lookAt(
+      rig.anchor.x,
+      eye - radius * Math.tan((env.streetViewPitch * Math.PI) / 180),
+      rig.anchor.z
+    );
+    /*
+     * `controls.update()` is deliberately not called.
+     *
+     * OrbitControls does not store its angles — it re-derives them from the
+     * camera's position, applies its own damped spherical state, and writes the
+     * position back. Calling it here undid the assignment in the same frame:
+     * measured at 3.9m and -14 degrees against the 2.5m and -6 asked for.
+     * Writing after the rig has run, and leaving the controls alone, is what
+     * makes the values stick.
+     */
+    camera.updateMatrixWorld(true);
+  }
+
+  /** An on-screen explanation, because a black backdrop explains nothing. */
+  _showStreetViewNotice(reason) {
+    const notice = document.createElement('div');
+    notice.setAttribute(
+      'style',
+      `position:fixed; left:50%; top:18px; transform:translateX(-50%); z-index:60;
+       max-width:min(560px, 92vw); padding:12px 16px; border-radius:10px;
+       border:1px solid rgba(255,255,255,.16); background:rgba(12,16,24,.92);
+       backdrop-filter:blur(10px); color:#dfe8f5; font:13px/1.6 system-ui,sans-serif;
+       text-align:center;`
+    );
+    notice.innerHTML = reason === 'no-key'
+      ? `<b>Street View needs a Google Maps API key.</b><br>
+         Add <code>&amp;gmapskey=YOUR_KEY</code> to the address, with the
+         Maps JavaScript API enabled for it.`
+      : `<b>Street View could not load.</b><br>
+         Usually the key is restricted to another referer, the Maps JavaScript
+         API is not enabled on it, or billing is off.`;
+    document.body.appendChild(notice);
+    setTimeout(() => { notice.style.transition = 'opacity .6s'; notice.style.opacity = '0'; }, 15000);
+  }
+
+  /**
+   * Re-stage the scene for a grounded panorama backdrop.
+   *
+   * The stage was tuned against a flat void: a 400-metre floor, fog reaching
+   * 135, and a camera looking down at it, because there was nothing else to
+   * look at. None of that survives contact with a backdrop that has a street
+   * and a skyline in it — the floor buries the city, the fog paints it out, and
+   * the camera points away from it.
+   *
+   * These are the values a panorama wants, applied only when one actually
+   * loads, so the flat stage keeps the framing it was authored with. Every one
+   * of them is still a control in the editor; this is a starting point, not a
+   * lock.
+   */
+  _stageForPanorama() {
+    Object.assign(settings.environment, {
+      // Trim the floor to a plaza. Anything further was invisible under fog and
+      // is now actively in the way of the city.
+      floorScale: 0.1,
+      // Fog has to finish *before* the floor's edge, or the edge shows as a
+      // hard arc and the player appears to stand on a disc.
+      fogNear: 6,
+      fogFar: 18,
+      // Read the fog colour off the road rather than the horizon, so the floor
+      // fades into the street instead of into an overcast sky.
+      fogHorizonOffset: 0.1,
+      // Close enough to parallax convincingly, far enough to clear the floor.
+      parallaxWorldScale: 4.5,
+      backgroundIntensity: 1.1,
+      // The void lit characters from behind; a lit city needs them to read as
+      // more than silhouettes.
+      ambientIntensity: 0.4
+    });
+
+    /*
+     * Take the floor's colour from the panorama's own road.
+     *
+     * Fog hides where the floor stops, but only if the floor is already about
+     * the right colour underneath — fading a slate-blue plaza into a wet-asphalt
+     * street just produces a slate-blue smear. Matching the material first is
+     * what turns the join from "a dark disc in front of a photo" into one
+     * surface. The tint is lifted slightly so the floor keeps its own variation
+     * rather than going flat.
+     */
+    const road = this.environment.roadColour();
+    if (road) {
+      // Lifted off the raw sample: the road in the panorama is already lit, and
+      // the floor still has to survive this scene's own lighting on top.
+      settings.environment.floorColor = App._lighten(road, 1.3);
+      settings.environment.floorTint = App._lighten(road, 1.9);
+    }
+
+    settings.camera.distance = 14;
+    // Tilted down enough to hold the crossing itself in frame, not just the
+    // skyline above it.
+    this.rig.setOrbit(1.12, 0.6);
+  }
+
+  /** `#rrggbb` scaled in sRGB, clamped. */
+  static _lighten(hex, gain) {
+    const n = parseInt(hex.slice(1), 16);
+    const scale = (shift) =>
+      Math.min(255, Math.round(((n >> shift) & 255) * gain))
+        .toString(16)
+        .padStart(2, '0');
+    return `#${scale(16)}${scale(8)}${scale(0)}`;
+  }
+
+  /**
+   * Voice, the HUD and the push-to-talk key.
+   *
+   * Push-to-talk rather than always-on listening: an open microphone in a room
+   * where people are talking fires spells at conversation, and a demo that
+   * misfires is worse than one that needs a key held.
+   */
+  _bindVoice() {
+    const key = settings.voice.pushToTalkKey;
+
+    this._onVoiceKeyDown = (event) => {
+      if (event.code !== key || event.repeat) return;
+      const target = event.target;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      event.preventDefault(); // Space would otherwise scroll the page
+      this.voice.pressToTalk();
+    };
+    this._onVoiceKeyUp = (event) => {
+      if (event.code !== key) return;
+      this.voice.releaseToTalk();
+    };
+
+    window.addEventListener('keydown', this._onVoiceKeyDown);
+    window.addEventListener('keyup', this._onVoiceKeyUp);
+
+    this.voice.on('listening', (listening) => {
+      this.voiceHUD.setListening(listening);
+      /*
+       * The hands prepare for as long as somebody is speaking.
+       *
+       * Driven by the microphone rather than by the cast, because the cast
+       * fires a few hundred milliseconds after the player has committed to it
+       * — a gesture that starts then is always late, and the seal held while
+       * talking is the whole reason the reference footage reads as casting
+       * rather than as pointing.
+       */
+      this.hands?.setCharging(listening);
+    });
+    this.voice.on('transcript', (text) => this.voiceHUD.setTranscript(text));
+    this.voice.on('cast', (element, modifiers) => this.voiceHUD.showCast(element, modifiers));
+    this.voice.on('mutate', (modifier) => this.voiceHUD.showMutation(modifier));
+    this.voice.on('miss', (text) => this.voiceHUD.showMiss(text));
+    this.voice.on('error', (kind) => {
+      if (kind === 'unsupported') this.voiceHUD.setSupported(false);
+      else this.hud.showToast(`Voice: ${kind}`);
+    });
+
+    // The phone's push-to-talk: hold the mic button instead of a key.
+    this.voiceHUD.onTalkStart = () => this.voice.pressToTalk();
+    this.voiceHUD.onTalkEnd = () => this.voice.releaseToTalk();
+    this.voiceHUD.onHelp = () => this.hud.toggleHelp();
+
+    this.voiceHUD.setSupported(this.voice.supported);
+
+    // Show the guide once, for a first-time visitor who has no idea a
+    // microphone is the control scheme. After that it is behind the ? button.
+    let seen = false;
+    try {
+      seen = localStorage.getItem('voice.onboarded') === '1';
+      localStorage.setItem('voice.onboarded', '1');
+    } catch {
+      seen = false;
+    }
+    // v2 introduces itself through the interaction panel; stacking the legacy
+    // voice tutorial over that first decision obscures both on a phone. The ?
+    // button remains available and still opens this guide on demand.
+    if (!seen && this.campaignVersion !== 2) this.hud.toggleHelp();
+  }
+
   /** Select an ability and arm it, unless it is still cooling down. */
   armAbility(element = this.element) {
-    if (!this.session.canControl) return;
+    if (!this.canControl) return;
     if ((this.cooldowns.get(element) ?? 0) > 0) {
       this.hud.showToast('Not ready');
       return;
@@ -344,7 +999,7 @@ export class App {
   }
 
   _cast(origin, direction, distance) {
-    if (!this.session.canControl) return;
+    if (!this.canControl) return;
     const element = this.element;
     this.abilities.cast(origin, direction, distance, element);
     this.cooldowns.set(element, this._cooldownFor(element));
@@ -357,7 +1012,7 @@ export class App {
   }
 
   castSelfAbility(id) {
-    if (!this.session.canControl) return;
+    if (!this.canControl) return;
     if (!this.selfCooldowns.has(id)) return;
     if ((this.selfCooldowns.get(id) ?? 0) > 0) {
       this.hud.showToast('Ability not ready');
@@ -432,8 +1087,9 @@ export class App {
 
   /** Camera-relative WASD movement, with Shift selecting the run cycle. */
   _updateMovement(dt) {
-    if (!this.session.canControl) {
+    if (!this.canControl) {
       this.character.setLocomotion('idle');
+      this._moveSpeed = 0;
       return;
     }
     const strafe = Number(this.input.isDown('KeyD')) - Number(this.input.isDown('KeyA'));
@@ -441,13 +1097,21 @@ export class App {
 
     if (strafe === 0 && forward === 0) {
       this.character.setLocomotion('idle');
+      this._moveSpeed = 0;
       return;
     }
 
     const running = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight');
+    // Drives the hands' stride swing. Taken here rather than asked of the
+    // character, which reports an animation state rather than a speed.
+    this._moveSpeed = running ? 1 : 0.55;
     this.character.setLocomotion(running ? 'run' : 'walk');
 
-    this.camera.getWorldDirection(this._moveForward);
+    // In first person the eyes are the body: forward is where you are looking,
+    // taken from the look angles rather than from the camera matrix, which is
+    // written later in the frame and would be one frame stale here.
+    if (this.firstPerson) this.firstPerson.getForward(this._moveForward);
+    else this.camera.getWorldDirection(this._moveForward);
     this._moveForward.y = 0;
     if (this._moveForward.lengthSq() < 1e-6) this._moveForward.set(0, 0, -1);
     else this._moveForward.normalize();
@@ -494,6 +1158,146 @@ export class App {
     await this.environment.loadEnvironment(hdr);
     frame.uEnvMap.value = this.environment.equirect;
 
+    // A dedicated backdrop is optional and must never block the boot: a missing
+    // or malformed panorama should cost you the sky, not the app.
+    /*
+     * `?streetview` puts Google Street View behind the scene, and takes every
+     * other backdrop off: the generated panoramas and the flat void are both
+     * replaced, not layered under it.
+     *
+     * The key is not committed. It arrives as `?gmapskey=...` or, for a build
+     * that owns one, as `VITE_GOOGLE_MAPS_KEY` in `.env`.
+     */
+    const params = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+
+    /*
+     * The campaign is played on a street, so it turns Street View on itself.
+     *
+     * `backgroundMode` defaults to 'flat' and the backdrop used to need an
+     * explicit `?streetview`, which meant the first level of a campaign built
+     * entirely around walking down a road opened on an empty void. The query
+     * parameter still works, and still wins, because it can name a place.
+     */
+    if (!params.has('streetview') && settings.campaign.enabled && this.campaign) {
+      const planned = this.campaign.plannedScene();
+      if (planned) {
+        this.scene_ = planned;
+        settings.environment.streetViewLat = planned.lat;
+        settings.environment.streetViewLng = planned.lng;
+        params.set('streetview', planned.id);
+      }
+    }
+
+    if (params.has('streetview')) {
+      const at = params.get('streetview');
+      // Accepts a scene id (`?streetview=taj-mahal`) or a raw coordinate.
+      const named = at ? findScene(at) : null;
+      if (named) {
+        this.scene_ = named;
+        settings.environment.streetViewLat = named.lat;
+        settings.environment.streetViewLng = named.lng;
+      } else if (at && at.includes(',')) {
+        const [lat, lng] = at.split(',').map(Number);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          settings.environment.streetViewLat = lat;
+          settings.environment.streetViewLng = lng;
+        }
+      } else {
+        this.scene_ = DEFAULT_SCENE;
+        settings.environment.streetViewLat = DEFAULT_SCENE.lat;
+        settings.environment.streetViewLng = DEFAULT_SCENE.lng;
+      }
+      this.loading.setProgress(0.15, 'Connecting Street View…');
+      /*
+       * Boot must survive a bad key.
+       *
+       * `load()` guards itself, but a key the API rejects — most often
+       * `RefererNotAllowedMapError`, a domain missing from the key's referrer
+       * list — does not fail cleanly. The API hands back panorama objects that
+       * exist and are crippled, so construction succeeds and the *next* call
+       * into one throws from inside Google's code, after `load()` has already
+       * returned. Unguarded, that killed the whole boot and left the loading
+       * bar up forever, which is exactly the silent black screen this path was
+       * written to avoid.
+       */
+      try {
+        await this._startStreetView(
+          params.get('gmapskey') || import.meta.env?.VITE_GOOGLE_MAPS_KEY || ''
+        );
+      } catch (error) {
+        this.streetViewError = `crashed: ${error?.message ?? error}`;
+        this.streetView = null;
+        settings.environment.backgroundMode = 'flat';
+        console.warn('[streetview] not shown:', this.streetViewError);
+        this._showStreetViewNotice('failed');
+      }
+    }
+
+    // `?panorama=./hdri/whatever.jpg` overrides the configured backdrop, so a
+    // freshly generated panorama can be tried by dropping it in `public/` and
+    // editing the address bar — no rebuild, no code change.
+    const panoramaOverride =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('panorama')
+        : null;
+    if (panoramaOverride) settings.environment.panoramaUrl = panoramaOverride;
+
+    if (settings.environment.panoramaUrl) {
+      this.loading.setProgress(0.2, 'Loading backdrop…');
+      try {
+        this.environment.setBackdrop(await assets.loadPanorama(settings.environment.panoramaUrl));
+        // A backdrop was asked for explicitly; show it rather than making the
+        // caller also flip the mode.
+        settings.environment.backgroundMode = 'panorama';
+
+        /*
+         * The depth map that turns the backdrop into geometry.
+         *
+         * Derived from the panorama's own name unless one is given, because
+         * generators emit the pair together — `sky.png` / `sky_depth.png`. A
+         * missing depth map is not an error: parallax simply stays off and the
+         * panorama is drawn flat, which is the sensible thing to do rather than
+         * failing a boot over an optional effect.
+         */
+        const base = settings.environment.panoramaUrl;
+        /*
+         * A depth map is very often a PNG even when the panorama is a JPEG,
+         * because JPEG's block compression shows up in geometry as wobble along
+         * every silhouette. So the sibling is tried in its own format and as a
+         * PNG before giving up.
+         */
+        const candidates = settings.environment.depthUrl
+          ? [settings.environment.depthUrl]
+          : [
+              // PNG first: a depth map is nearly always one, because JPEG's
+              // block compression shows up in geometry as wobble along every
+              // silhouette. Probing the panorama's own extension first meant a
+              // 404 in the console on every single boot.
+              base.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth.png$2'),
+              base.replace(/(\.[a-z0-9]+)(\?|#|$)/i, '_depth$1$2')
+            ];
+
+        let loaded = false;
+        for (const url of candidates) {
+          try {
+            this.environment.setDepthMap(await assets.loadTexture(url));
+            settings.environment.parallax = true;
+            loaded = true;
+            break;
+          } catch {
+            /* try the next spelling */
+          }
+        }
+        if (!loaded) console.info('[env] no depth map beside', base, '— backdrop stays flat');
+
+        if (loaded) this._stageForPanorama();
+      } catch (error) {
+        console.warn('[env] backdrop failed to load, falling back to the probe', error);
+      }
+    }
+
     this.loading.setProgress(0.35, 'Loading floor…');
     await this.ground.loadTextures(assets);
 
@@ -512,7 +1316,21 @@ export class App {
       this.enemies.setCompileVisible(false);
     }
 
-    this.loading.setProgress(1, 'Ready');
+    /*
+     * The loaders may still be resolving textures against a blob URL after
+     * their own promise has resolved, so the URLs are only released once every
+     * queued request has settled — revoking earlier turns a texture into a
+     * silent 404.
+     */
+    await assets.settled();
+    assets.releaseBlobs();
+
+    const { cached, fetched, bytes } = assets.stats;
+    const mb = (bytes / 1024 / 1024).toFixed(1);
+    this.loading.setProgress(1, cached && !fetched
+      ? `Ready — ${mb}MB from cache`
+      : `Ready — ${cached} cached, ${fetched} downloaded`);
+    console.info(`[assets] ${cached} from cache, ${fetched} downloaded, ${mb}MB total`);
     this.loading.hide();
 
     this.start();
@@ -520,6 +1338,10 @@ export class App {
 
   start() {
     this.time.reset();
+    if (this.sandbox) {
+      if (this.campaign) this.campaign.start();
+      else this.dummies.start();
+    }
     const loop = () => {
       this._raf = requestAnimationFrame(loop);
       this.frame();
@@ -538,11 +1360,11 @@ export class App {
     gl.info.reset();
 
     const raw = this.time.tick();
-    this.session.update(raw);
-    this.performanceQuality.update(raw, this.session.isRunning && !this.paused);
+    if (!this.sandbox) this.session.update(raw);
+    this.performanceQuality.update(raw, this.isRunning && !this.paused);
     const hitStopped = this.hitStopRemaining > 0;
     this.hitStopRemaining = Math.max(0, this.hitStopRemaining - raw);
-    const dt = this.paused || hitStopped ? 0 : raw * settings.global.timeScale * this.session.simulationScale;
+    const dt = this.paused || hitStopped ? 0 : raw * settings.global.timeScale * this.simulationScale;
     this.elapsed += dt;
 
     /* ---- shared uniforms ---- */
@@ -581,6 +1403,39 @@ export class App {
     this.ground.update(this.elapsed);
     this.dust.update(this.elapsed, this.character.position);
 
+    // The backdrop is a DOM layer, so it is turned rather than rendered: the
+    // viewer is told where the camera looks and draws its own pixels.
+    if (this.sandbox) {
+      this.dummies.update(raw);
+      // Campaign enemies can down the shared PlayerHealth while the normal
+      // GameSession is idle. Keep its real-time recovery alive in sandbox mode
+      // or HP=0 becomes permanent and a combat anchor can never recover.
+      this.session.player.update(raw, null);
+      /*
+       * Wall-clock, not the clamped simulation delta.
+       *
+       * `Time` caps `delta` at 1/20s so a stall cannot hand the solver a huge
+       * step — correct for physics, wrong for a card someone is reading. Paced
+       * off the clamp, a 4-second intro takes 26 seconds at 3fps, and the
+       * slowdown lands precisely when a panorama is loading.
+       */
+      const wall = this.time.realDelta;
+      this.campaign?.update(wall);
+      this.campaignHUD?.update(wall);
+      if (this.campaignHUD && this.shard) {
+        this.campaignHUD.setShardBearing(this.shard.screenBearing(this._facing()));
+      }
+      this.mana.update(raw);
+      this.statusBar.update(
+        { current: this.session.player.currentHP, max: this.session.player.maxHP },
+        { current: this.mana.current, max: this.mana.max }
+      );
+      // Real time, deliberately: the window for a trailing modifier is a
+      // property of how fast someone talks, not of the simulation clock.
+      this.voice.update(raw);
+      this.voiceHUD.update(raw);
+    }
+
     this.enemies.update(dt, raw);
     this.combat.update(dt);
     this.abilities.update(dt);
@@ -590,7 +1445,7 @@ export class App {
     this.fissures.update(dt);
     this.bursts.update(dt);
     this.lights.update(dt);
-    this.relic.update(raw * Math.max(0.18, this.session.simulationScale));
+    this.relic.update(raw * Math.max(0.18, this.simulationScale));
 
     /* ---- camera ---- */
     const focus = this.abilities.focus;
@@ -600,6 +1455,25 @@ export class App {
     this.flash.update(raw);
     this.playerHitFeedback.update(raw);
     this.rig.update(raw);
+
+    /*
+     * After the rig, not before: `rig.update` is the last thing that moves the
+     * camera, and it damps toward its own idea of where the camera belongs.
+     * Aligning first meant being overwritten in the same frame — measured at
+     * 3.96m and -14.5 degrees against the 2.5m and -6 that were asked for.
+     */
+    if (this.firstPerson) {
+      this.firstPerson.position.set(this.character.position.x, 0, this.character.position.z);
+      this.firstPerson.update();
+      this.hands?.update(raw, this._moveSpeed ?? 0);
+    }
+
+    if (this.streetView) {
+      this._walkTheStreet();
+      if (!this.firstPerson) this._alignCameraToStreet();
+      this.streetView.sync(this.camera);
+      this._updateMiniMap();
+    }
 
     this.contactShadows.setPosition(this.character.position.x, this.character.position.z);
     this.contactShadows.render(this.scene);
@@ -634,7 +1508,7 @@ export class App {
       kills: this.enemies.kills
     }));
     this.damageNumbers.update(raw);
-    this.gameUI.update(this.session, this.enemies);
+    if (!this.sandbox) this.gameUI.update(this.session, this.enemies);
     this._updateDebug(raw, gl);
   }
 
@@ -670,6 +1544,24 @@ export class App {
 
   dispose() {
     this.stop();
+    this.spawnTelegraph?.dispose();
+    this.hands?.dispose();
+    this.firstPerson?.dispose();
+    this.statusBar?.dispose();
+    this.miniMap?.dispose();
+    this.sceneSelector?.dispose();
+    this.streetView?.dispose();
+    if (this.sandbox) {
+      window.removeEventListener('keydown', this._onVoiceKeyDown);
+      window.removeEventListener('keyup', this._onVoiceKeyUp);
+      this.voice.dispose();
+      this.voiceHUD.dispose();
+      this.dummies.dispose();
+      this.campaign?.dispose();
+      this.shard?.dispose();
+      this.campaignHUD?.dispose();
+      this.interactionHUD?.dispose();
+    }
     this.input.dispose();
     this.aim.dispose();
     this.abilities.dispose();

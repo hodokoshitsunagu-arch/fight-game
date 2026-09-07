@@ -183,16 +183,16 @@ export class ThunderAbility extends Ability {
 
   /** The bolt holds after it lands, then blows out. */
   get impactDuration() {
-    return Math.max(0.05, settings.thunder.lifetime * settings.global.lifetime);
+    return Math.max(0.05, this.config.lifetime * settings.global.lifetime);
   }
 
   get fadeDuration() {
-    return Math.max(0.05, settings.thunder.fadeTime);
+    return Math.max(0.05, this.config.fadeTime);
   }
 
   /** Lightning gutters where ice glints — a hard, quantised stutter. */
   lightShimmer() {
-    const c = settings.thunder;
+    const c = this.config;
     const step = Math.floor(this.age * Math.max(1, c.lightFlickerSpeed));
     // Deterministic hash of the step index: the light snaps between levels on
     // the same clock the bolt's own flicker runs on.
@@ -212,7 +212,7 @@ export class ThunderAbility extends Ability {
    * here rather than baked into the cast.
    */
   _handPoint(out) {
-    const c = settings.thunder;
+    const c = this.config;
     out
       .copy(this.origin)
       .addScaledVector(this.direction, c.handForward)
@@ -224,7 +224,7 @@ export class ThunderAbility extends Ability {
   /** Where it lands. */
   _impactPoint(out) {
     this.pointAt(1, out);
-    out.y = settings.thunder.endHeight;
+    out.y = this.config.endHeight;
     return out;
   }
 
@@ -236,7 +236,7 @@ export class ThunderAbility extends Ability {
    * GPU actually draws instead of near it.
    */
   _axisPoint(s, out) {
-    const c = settings.thunder;
+    const c = this.config;
     const t = saturate(s);
     out
       .copy(this.origin)
@@ -248,7 +248,7 @@ export class ThunderAbility extends Ability {
 
   /** Half-width of the bundle at `s`, metres — how far sparks may be thrown. */
   _bundleRadius(s) {
-    const c = settings.thunder;
+    const c = this.config;
     return lerp(c.spreadNear, c.spread, Math.pow(saturate(s), Math.max(0.01, c.spreadCurve)));
   }
 
@@ -279,7 +279,7 @@ export class ThunderAbility extends Ability {
    * @param {number} fade 1 while the bolt is lit, ramping to 0 as it blows out
    */
   _syncUniforms(fade) {
-    const c = settings.thunder;
+    const c = this.config;
     const g = settings.global;
     const state = this._state;
 
@@ -294,7 +294,7 @@ export class ThunderAbility extends Ability {
     state.strands = this._strandCount;
     this.geometry.instanceCount = this._strandCount;
 
-    for (const material of this.boltMaterials) material.userData.sync(state);
+    for (const material of this.boltMaterials) material.userData.sync(state, this.config);
 
     /* --- the particle systems, all four of them --- */
     this.sparks.setGradient(
@@ -354,7 +354,7 @@ export class ThunderAbility extends Ability {
 
   /** The flash at the caster's hand as the bolt leaves it. */
   _muzzleFx() {
-    const c = settings.thunder;
+    const c = this.config;
     const g = settings.global;
 
     this._handPoint(_pos);
@@ -398,7 +398,7 @@ export class ThunderAbility extends Ability {
    * @param {number} scale 0..1 — thinned out once the bolt is only holding
    */
   _boltFx(dt, scale) {
-    const c = settings.thunder;
+    const c = this.config;
     const g = settings.global;
     const time = frame.uTime.value;
     // Only the drawn part of the bolt is allowed to throw anything.
@@ -495,7 +495,7 @@ export class ThunderAbility extends Ability {
 
   /** Burns laid on the floor as the strike front passes over it. */
   _groundFx() {
-    const c = settings.thunder;
+    const c = this.config;
     const step = 1 / Math.max(0.05, c.arcRate);
 
     while (this.front - this._burnDistance >= step) {
@@ -541,11 +541,11 @@ export class ThunderAbility extends Ability {
     this._boltFx(dt, 1);
     this._groundFx();
 
-    this.ctx.shake.rumble(settings.thunder.rumble * settings.global.cameraShake, dt);
+    this.ctx.shake.rumble(this.config.rumble * settings.global.cameraShake, dt);
   }
 
   onImpact() {
-    const c = settings.thunder;
+    const c = this.config;
     const g = settings.global;
     const time = frame.uTime.value;
 

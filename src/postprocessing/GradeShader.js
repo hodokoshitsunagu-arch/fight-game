@@ -96,7 +96,16 @@ export const GradeShader = {
         color += grain * uGrain;
       }
 
-      gl_FragColor = vec4(max(color, 0.0), 1.0);
+      /*
+       * Alpha is carried through, not written as 1.
+       *
+       * This is the last pass, so whatever it writes is what the page
+       * composites. Forcing opacity here made the canvas opaque no matter what
+       * the renderer's clear alpha was — which is invisible against the flat
+       * void, and is exactly what hid the Street View backdrop behind a black
+       * screen while every other check said transparent.
+       */
+      gl_FragColor = vec4(max(color, 0.0), texture2D(tDiffuse, uv).a);
     }
   `
 };

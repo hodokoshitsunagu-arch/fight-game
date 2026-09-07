@@ -1,4 +1,5 @@
 import {
+  ShadowMaterial,
   Mesh,
   PlaneGeometry,
   MeshStandardMaterial,
@@ -190,9 +191,59 @@ export class Ground {
    * repeat is touched — that feeds the texture's UV matrix (auto-updated each
    * render), so there is no image re-upload and this is safe to call per frame.
    */
+  /**
+   * Draw only the shadows the floor catches, and nothing else.
+   *
+   * With a Street View backdrop the floor is the one thing standing between the
+   * scene and the street — a 40-metre opaque plane across the bottom of the
+   * frame. Hiding it outright would put every character and every ground effect
+   * in mid-air with nothing under them.
+   *
+   * `ShadowMaterial` is the compositing answer, and the same one AR uses:
+   * transparent everywhere except where something casts a shadow onto it. The
+   * street shows through, and the figures standing on it still look like they
+   * are standing on it.
+   *
+   * The real material is kept rather than replaced, so this is reversible from
+   * the editor without rebuilding anything.
+   */
+  setShadowOnly(enabled, opacity = 0.42) {
+    if (enabled) {
+      this._shadowMaterial ??= new ShadowMaterial({ transparent: true, opacity });
+      this._shadowMaterial.opacity = opacity;
+      if (this.mesh.material !== this._shadowMaterial) {
+        this._solidMaterial = this.mesh.material;
+        this.mesh.material = this._shadowMaterial;
+      }
+    } else if (this._solidMaterial) {
+      this.mesh.material = this._solidMaterial;
+      this._solidMaterial = null;
+    }
+  }
+
   _applyTiling() {
+    const env = settings.environment;
+    this.setShadowOnly(env.floorShadowOnly, env.floorShadowOpacity);
     if (!this.textures) return;
-    const repeat = PLANE_SIZE / Math.max(0.1, settings.environment.floorTextureScale);
+
+    /*
+     * The floor is 400 metres across but fog swallows it by 135, so most of it
+     * is invisible surface that still occludes. That is fine against a flat
+     * void and wrong against a panorama backdrop, where the far floor hides the
+     * city that is meant to be behind it.
+     *
+     * Scaling the mesh trims it without rebuilding geometry. Texel density is
+     * held by folding the same factor into the repeat, so shrinking the floor
+     * does not stretch its texture.
+     */
+    const scale = Math.max(0.05, settings.environment.floorScale);
+    if (scale !== this._scale) {
+      this._scale = scale;
+      this.mesh.scale.setScalar(scale);
+      this.mesh.updateMatrix();
+    }
+
+    const repeat = (PLANE_SIZE * scale) / Math.max(0.1, settings.environment.floorTextureScale);
     if (repeat === this._repeat) return;
     this._repeat = repeat;
     for (const texture of Object.values(this.textures)) texture.repeat.set(repeat, repeat);
