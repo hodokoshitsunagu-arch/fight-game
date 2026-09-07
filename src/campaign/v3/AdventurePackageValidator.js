@@ -1,3 +1,5 @@
+import { analyzeAdventureGraph } from './AdventureGraph.js';
+
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SEGMENTS = new Set(['shared-opening', 'case', 'final-reasoning']);
 const TRANSITIONS = new Set(['coordinate', 'walk', 'narrative']);
@@ -5,9 +7,6 @@ const FALLBACK_MODES = new Set([
   'continue-with-authored-context',
   'skip-with-authored-summary',
   'retry-then-continue',
-]);
-const FORBIDDEN_STREET_VIEW_KEYS = new Set([
-  'pano', 'panoramaId', 'pixelHotspot', 'pixelHotspots', 'googleImagery',
 ]);
 
 function diagnostic(code, path, message) {
@@ -58,47 +57,25 @@ function targetDiagnostics(node, path, { production }) {
       'street-view.acceptance.pending', `${path}.streetViewTarget.routeStatus`,
       `node ${node.id} still requires human Street View acceptance`,
     ));
+    const review = target.reviewEvidence;
+    if (review?.method !== 'official-street-view' || !review.reviewer || !review.notes ||
+        !Number.isFinite(Date.parse(review.reviewedAt ?? ''))) {
+      diagnostics.push(diagnostic(
+        'street-view.review-evidence.missing', `${path}.streetViewTarget.reviewEvidence`,
+        `node ${node.id} has no auditable official Street View review evidence`,
+      ));
+    }
   }
   return diagnostics;
 }
 
-function reachableFrom(startNodeId, edges) {
-  const next = new Map();
-  for (const edge of edges) {
-    const destinations = next.get(edge.from) ?? [];
-    destinations.push(edge.to);
-    next.set(edge.from, destinations);
-  }
-  const seen = new Set();
-  const pending = startNodeId ? [startNodeId] : [];
-  while (pending.length) {
-    const nodeId = pending.pop();
-    if (seen.has(nodeId)) continue;
-    seen.add(nodeId);
-    pending.push(...(next.get(nodeId) ?? []));
-  }
-  return seen;
-}
-
-function canReachFinal(nodes, edges) {
-  const finalIds = new Set(nodes
-    .filter((node) => node.segment === 'final-reasoning')
-    .map((node) => node.id));
-  const previous = new Map();
-  for (const edge of edges) {
-    const origins = previous.get(edge.to) ?? [];
-    origins.push(edge.from);
-    previous.set(edge.to, origins);
-  }
-  const seen = new Set();
-  const pending = [...finalIds];
-  while (pending.length) {
-    const nodeId = pending.pop();
-    if (seen.has(nodeId)) continue;
-    seen.add(nodeId);
-    pending.push(...(previous.get(nodeId) ?? []));
-  }
-  return seen;
+function isForbiddenStreetViewKey(key) {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return normalized === 'pano' || normalized.includes('panorama') ||
+    (normalized.includes('pixel') && normalized.includes('hotspot')) ||
+    (normalized.includes('streetview') &&
+      (normalized.includes('image') || normalized.includes('imagery'))) ||
+    normalized.includes('googleimagery');
 }
 
 function participantDiagnostics(rules, { production }) {
@@ -128,24 +105,30 @@ function participantDiagnostics(rules, { production }) {
 
 function routeShapeDiagnostics(adventurePackage, nodes) {
   const diagnostics = [];
+  const criteria = adventurePackage.releaseCriteria;
+  if (!criteria || !Number.isInteger(criteria.anchorCount) || !criteria.segmentCounts ||
+      !criteria.caseAnchorCounts) {
+    return [diagnostic('route.policy.missing', '$.releaseCriteria',
+      'production packages require a city-specific, reviewable route-shape policy')];
+  }
   const counts = nodes.reduce((result, node) => {
     result[node.segment] = (result[node.segment] ?? 0) + 1;
     return result;
   }, {});
-  if (nodes.length !== 36) diagnostics.push(diagnostic(
-    'route.anchor-count', '$.graph.nodes', 'production packages require exactly 36 anchors',
+  if (nodes.length !== criteria.anchorCount) diagnostics.push(diagnostic(
+    'route.anchor-count', '$.graph.nodes',
+    `production package requires exactly ${criteria.anchorCount} anchors`,
   ));
-  if (counts['shared-opening'] !== 3 || counts.case !== 30 || counts['final-reasoning'] !== 3) {
-    diagnostics.push(diagnostic('route.segment-shape', '$.graph.nodes',
-      'production route shape requires 3 shared-opening, 30 case, and 3 final-reasoning anchors'));
+  for (const [segment, expected] of Object.entries(criteria.segmentCounts)) {
+    if (counts[segment] !== expected) diagnostics.push(diagnostic(
+      'route.segment-shape', '$.graph.nodes',
+      `production route shape requires ${expected} ${segment} anchors`,
+    ));
   }
-  if ((adventurePackage.cases ?? []).length !== 3) diagnostics.push(diagnostic(
-    'route.case-count', '$.cases', 'production packages require exactly three cases',
-  ));
-  for (const item of adventurePackage.cases ?? []) {
-    const count = nodes.filter((node) => node.caseId === item.id).length;
-    if (count !== 10) diagnostics.push(diagnostic(
-      'route.case-shape', '$.graph.nodes', `case ${item.id} requires exactly 10 anchors`,
+  for (const [caseId, expected] of Object.entries(criteria.caseAnchorCounts)) {
+    const count = nodes.filter((node) => node.caseId === caseId).length;
+    if (count !== expected) diagnostics.push(diagnostic(
+      'route.case-shape', '$.graph.nodes', `case ${caseId} requires exactly ${expected} anchors`,
     ));
   }
   return diagnostics;
@@ -165,12 +148,16 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
   ));
 
   scan(adventurePackage, (key, value, path) => {
-    if (FORBIDDEN_STREET_VIEW_KEYS.has(key)) diagnostics.push(diagnostic(
+    if (isForbiddenStreetViewKey(key)) diagnostics.push(diagnostic(
       'street-view.forbidden-field', path,
       `${path} persists prohibited Google imagery, panorama, or pixel data`,
     ));
-    if (production && key === 'provenance' && value?.kind === 'ai-draft' &&
-        (value.reviewStatus !== 'human-accepted' || value.humanEdited !== true)) {
+    const reviews = value?.reviews;
+    if (production && key === 'provenance' && value?.kind === 'ai-draft' && (
+      value.reviewStatus !== 'human-accepted' || value.humanEdited !== true ||
+      !reviews || !['facts', 'copyrightSimilarity', 'culture', 'gameplay']
+        .every((gate) => reviews[gate] === true)
+    )) {
       diagnostics.push(diagnostic('ai.unreviewed', path,
         `${path} contains an AI draft that has not been accepted by a human`));
     }
@@ -267,22 +254,64 @@ export function validateAdventurePackageDetailed(adventurePackage, { level = 'de
     ));
   }
 
-  const reachable = reachableFrom(adventurePackage?.graph?.startNodeId, edges);
+  const outgoing = new Map();
+  for (const edge of edges) {
+    const values = outgoing.get(edge.from) ?? [];
+    values.push(edge);
+    outgoing.set(edge.from, values);
+  }
+  for (const node of nodes) {
+    const branches = outgoing.get(node.id) ?? [];
+    if (branches.length < 2) continue;
+    const actionIds = new Set(node.interaction?.actions?.map((action) => action.id) ?? []);
+    const branchActions = branches.map((edge) => edge.actionId).filter(Boolean);
+    if (branchActions.length !== branches.length || new Set(branchActions).size !== branches.length ||
+        branchActions.some((actionId) => !actionIds.has(actionId))) {
+      diagnostics.push(diagnostic('graph.branch.invalid', '$.graph.edges',
+        `node ${node.id} branches must map unique semantic action ids to every outgoing edge`));
+    }
+  }
+
+  for (const [index, route] of (adventurePackage?.geography?.routes ?? []).entries()) {
+    if (!nodeIds.has(route.from) || !nodeIds.has(route.to) ||
+        !TRANSITIONS.has(route.transition) || !route.routeStatus) {
+      diagnostics.push(diagnostic('geography.route.invalid', `$.geography.routes.${index}`,
+        'geographic route references or semantics are invalid'));
+    }
+    if (production && route.routeStatus !== 'verified') diagnostics.push(diagnostic(
+      'geography.route.pending', `$.geography.routes.${index}.routeStatus`,
+      'geographic route still requires human Street View acceptance'));
+  }
+  if (production && nodes.length > 1 && !(adventurePackage?.geography?.routes?.length)) {
+    diagnostics.push(diagnostic('geography.routes.missing', '$.geography.routes',
+      'production packages require an independently authored geographic route view'));
+  }
+
+  const { reachable, canReachFinal } = analyzeAdventureGraph(adventurePackage);
   for (const node of nodes) {
     if (!reachable.has(node.id)) diagnostics.push(diagnostic(
       'graph.unreachable', '$.graph.nodes', `node ${node.id} is unreachable from the story start`,
     ));
   }
-  const reachesFinal = canReachFinal(nodes, edges);
   for (const node of nodes) {
-    if (reachable.has(node.id) && !reachesFinal.has(node.id)) diagnostics.push(diagnostic(
+    if (reachable.has(node.id) && !canReachFinal.has(node.id)) diagnostics.push(diagnostic(
       'graph.ending-unreachable', '$.graph.nodes', `node ${node.id} cannot reach a final reasoning node`,
     ));
   }
   if (!endings.length) diagnostics.push(diagnostic(
     'ending.missing', '$.endings', 'package has no ending',
   ));
+  const endingIds = new Set(endings.map((ending) => ending.id));
+  for (const item of adventurePackage?.cases ?? []) {
+    if (!endingIds.has(item.endingId)) diagnostics.push(diagnostic(
+      'case.ending.invalid', '$.cases', `case ${item.id} references an unknown ending`,
+    ));
+  }
   for (const [index, ending] of endings.entries()) {
+    if (!ending.id || !ending.requiresEvidence?.length || !ending.cultureCard?.id) {
+      diagnostics.push(diagnostic('ending.incomplete', `$.endings.${index}`,
+        `ending ${ending.id ?? '<missing>'} is incomplete for the runtime`));
+    }
     if (!caseIds.has(ending.caseId) ||
         (ending.requiresEvidence ?? []).some((id) => !evidenceIds.has(id))) {
       diagnostics.push(diagnostic('ending.reference.invalid', `$.endings.${index}`,

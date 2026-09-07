@@ -5,6 +5,15 @@ export const NEW_YORK_TRACER_PACKAGE = Object.freeze({
   status: 'development',
   title: '失序的城市档案 · 开发纵切',
   city: 'New York',
+  releaseCriteria: {
+    anchorCount: 36,
+    segmentCounts: { 'shared-opening': 3, case: 30, 'final-reasoning': 3 },
+    caseAnchorCounts: {
+      'manhattan-time-tracer': 10,
+      'brooklyn-shoreline': 10,
+      'queens-future': 10,
+    },
+  },
   cases: [{
     id: 'manhattan-time-tracer',
     title: '曼哈顿时间档案案 · 纵切',
@@ -94,6 +103,18 @@ export const NEW_YORK_TRACER_PACKAGE = Object.freeze({
     edges: [
       { from: 'opening-bowling-green', to: 'case-public-time' },
       { from: 'case-public-time', to: 'final-reasoning' },
+    ],
+  },
+  geography: {
+    routes: [
+      {
+        from: 'opening-bowling-green', to: 'case-public-time',
+        transition: 'coordinate', routeStatus: 'needs-live-check',
+      },
+      {
+        from: 'case-public-time', to: 'final-reasoning',
+        transition: 'coordinate', routeStatus: 'needs-live-check',
+      },
     ],
   },
   endings: [{

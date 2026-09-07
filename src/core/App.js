@@ -88,6 +88,7 @@ export class App {
     this.hitStopRemaining = 0;
     this._raf = 0;
     this.adventurePackage = adventurePackage;
+    this.authoringStreetView = false;
 
     /**
      * Sandbox is the default: a spell playground driven by voice, with practice
@@ -712,6 +713,10 @@ export class App {
       hud: this.v3AdventureHUD,
     });
     await this.campaign.startAuthorPlaytest(startNodeId);
+  }
+
+  setAuthoringStreetView(enabled) {
+    this.authoringStreetView = Boolean(enabled);
   }
 
   /** Whether an element may be cast — the campaign gates it, free roam does not. */
@@ -1509,7 +1514,7 @@ export class App {
     if (this.streetView) {
       this._walkTheStreet();
       if (!this.firstPerson) this._alignCameraToStreet();
-      this.streetView.sync(this.camera);
+      if (!this.authoringStreetView) this.streetView.sync(this.camera);
       this._updateMiniMap();
     }
 

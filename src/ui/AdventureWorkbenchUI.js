@@ -5,10 +5,12 @@ const SECTIONS = [
   ['cases', '案件'],
   ['graph.nodes', '锚点、互动、文化状态与回退'],
   ['graph.edges', '剧情边'],
+  ['geography.routes', '地理 Street View 路线'],
   ['evidence', '证据'],
   ['sources', '史实来源'],
   ['endings', '结局'],
   ['participantRules', '多人规则'],
+  ['releaseCriteria', '城市发布路线契约'],
 ];
 
 function atPath(target, path) {
@@ -27,12 +29,14 @@ async function requestDraft(payload) {
 }
 
 export class AdventureWorkbenchUI {
-  constructor({ adventurePackage, streetView, playtest, parent = document.body }) {
+  constructor({ adventurePackage, streetView, playtest, onDispose, parent = document.body }) {
     this.workbench = new AdventureWorkbench(adventurePackage, { streetView });
     this.playtest = playtest;
+    this.onDispose = onDispose;
     this.assistant = new AuthorDraftAssistant({ request: requestDraft });
     this.selectedAnchorId = adventurePackage.graph.nodes[0]?.id ?? null;
     this.currentDraft = null;
+    document.body.classList.add('is-author-workbench', 'is-streetview-navigation');
 
     this.root = document.createElement('aside');
     this.root.className = 'adventure-workbench';
@@ -73,6 +77,10 @@ export class AdventureWorkbenchUI {
             <label>转场<select data-calibration="transition"><option>coordinate</option><option>walk</option><option>narrative</option></select></label>
           </div>
           <button type="button" data-action="calibrate">读取当前官方 viewer 语义状态</button>
+          <div class="adventure-workbench__calibration">
+            <label>审核者<input data-review="reviewer" placeholder="姓名或团队角色"></label>
+            <label>审核证据说明<input data-review="notes" placeholder="可见目标、道路关系与转场"></label>
+          </div>
           <button type="button" data-action="accept-layout">人工接受当前真实布局</button>
           <p class="adventure-workbench__note">只保存坐标、方向、俯仰、范围、道路关系与转场；不保存影像、像素热点或 panorama ID。真实布局仍需人工接受。</p>
         </section>
@@ -94,6 +102,12 @@ export class AdventureWorkbenchUI {
           <label>作者选中的短参考（每行一条）<textarea data-field="ai-references"></textarea></label>
           <button type="button" data-action="generate-ai">显式生成未审核草稿</button>
           <label>作者编辑<textarea data-field="ai-result" disabled></textarea></label>
+          <div class="adventure-workbench__review-gates">
+            <label><input type="checkbox" data-ai-review="facts">史实</label>
+            <label><input type="checkbox" data-ai-review="copyrightSimilarity">版权相似性</label>
+            <label><input type="checkbox" data-ai-review="culture">文化处理</label>
+            <label><input type="checkbox" data-ai-review="gameplay">玩法</label>
+          </div>
           <button type="button" data-action="accept-ai" disabled>接受已编辑草稿到当前锚点</button>
           <p class="adventure-workbench__note">密钥只存在本地 Vite 服务端环境；生成内容标记为 unreviewed，作者编辑并接受前 production 校验拒绝发布。</p>
         </section>
@@ -137,7 +151,9 @@ export class AdventureWorkbenchUI {
       return '已保存语义校准；状态为 needs-human-acceptance。';
     }));
     this.root.querySelector('[data-action="accept-layout"]').addEventListener('click', () => this._run(() => {
-      this.workbench.acceptStreetViewLayout(this.selectedAnchorId);
+      const review = Object.fromEntries([...this.root.querySelectorAll('[data-review]')]
+        .map((input) => [input.dataset.review, input.value]));
+      this.workbench.acceptStreetViewLayout(this.selectedAnchorId, review);
       this.render();
       return '当前真实 Street View 布局已由作者人工接受。';
     }));
@@ -302,6 +318,8 @@ export class AdventureWorkbenchUI {
     this._run(() => {
       const accepted = this.assistant.accept(this.currentDraft, {
         content: this.root.querySelector('[data-field="ai-result"]').value,
+        reviews: Object.fromEntries([...this.root.querySelectorAll('[data-ai-review]')]
+          .map((input) => [input.dataset.aiReview, input.checked])),
       });
       const index = this.workbench.package.graph.nodes
         .findIndex((node) => node.id === this.selectedAnchorId);
@@ -330,6 +348,8 @@ export class AdventureWorkbenchUI {
   }
 
   dispose() {
+    document.body.classList.remove('is-author-workbench', 'is-streetview-navigation');
+    this.onDispose?.();
     this.toggle.remove();
     this.root.remove();
   }

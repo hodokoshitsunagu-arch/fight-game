@@ -26,9 +26,13 @@ export class AuthorDraftAssistant {
     };
   }
 
-  accept(draft, { content }) {
+  accept(draft, { content, reviews }) {
     if (!content?.trim() || content.trim() === draft.content.trim()) {
       throw new Error('A human must edit the AI draft before acceptance');
+    }
+    const gates = ['facts', 'copyrightSimilarity', 'culture', 'gameplay'];
+    if (!reviews || !gates.every((gate) => reviews[gate] === true)) {
+      throw new Error('All four review gates must pass before AI draft acceptance');
     }
     return {
       ...structuredClone(draft),
@@ -37,6 +41,7 @@ export class AuthorDraftAssistant {
         ...structuredClone(draft.provenance),
         reviewStatus: 'human-accepted',
         humanEdited: true,
+        reviews: structuredClone(reviews),
       },
     };
   }

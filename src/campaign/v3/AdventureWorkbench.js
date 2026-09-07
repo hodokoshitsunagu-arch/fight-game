@@ -3,6 +3,7 @@ import {
   exportAdventurePackage,
   importAdventurePackage,
 } from './AdventurePackageSerializer.js';
+import { analyzeAdventureGraph } from './AdventureGraph.js';
 
 function clone(value) {
   return structuredClone(value);
@@ -20,25 +21,9 @@ function setPath(target, path, value) {
 }
 
 function storyRelationships(adventurePackage) {
-  const edges = adventurePackage.graph?.edges ?? [];
-  const outgoing = new Map();
-  for (const edge of edges) {
-    const values = outgoing.get(edge.from) ?? [];
-    values.push(edge.to);
-    outgoing.set(edge.from, values);
-  }
-  const reachable = new Set();
-  const pending = adventurePackage.graph?.startNodeId
-    ? [adventurePackage.graph.startNodeId]
-    : [];
-  while (pending.length) {
-    const id = pending.pop();
-    if (reachable.has(id)) continue;
-    reachable.add(id);
-    pending.push(...(outgoing.get(id) ?? []));
-  }
+  const { nodes, edges, reachable } = analyzeAdventureGraph(adventurePackage);
   return {
-    nodes: (adventurePackage.graph?.nodes ?? []).map((node) => ({
+    nodes: nodes.map((node) => ({
       id: node.id,
       title: node.title,
       segment: node.segment,
@@ -53,15 +38,18 @@ export class AdventureWorkbench {
   constructor(adventurePackage, { streetView = null } = {}) {
     this.package = clone(adventurePackage);
     this.streetView = streetView;
+    this.previewReceipts = new Map();
   }
 
   update(path, value) {
     setPath(this.package, path, value);
+    this.previewReceipts.clear();
     return this.package;
   }
 
   replace(adventurePackage) {
     this.package = clone(adventurePackage);
+    this.previewReceipts.clear();
     return this.package;
   }
 
@@ -79,19 +67,10 @@ export class AdventureWorkbench {
 
   relationships() {
     const story = storyRelationships(this.package);
-    const byId = new Map((this.package.graph?.nodes ?? []).map((node) => [node.id, node]));
     return {
       story,
       geographic: {
-        routes: story.edges.map((edge) => {
-          const from = byId.get(edge.from);
-          return {
-            from: edge.from,
-            to: edge.to,
-            transition: from?.streetViewTarget?.transition ?? 'coordinate',
-            routeStatus: from?.streetViewTarget?.routeStatus ?? 'needs-live-check',
-          };
-        }),
+        routes: clone(this.package.geography?.routes ?? []),
       },
     };
   }
@@ -100,7 +79,12 @@ export class AdventureWorkbench {
     const node = this.package.graph?.nodes?.find((item) => item.id === nodeId);
     if (!node) throw new Error(`Unknown anchor ${nodeId}`);
     if (!this.streetView?.preview) return { ok: false, reason: 'viewer-unavailable' };
-    return this.streetView.preview(clone(node.streetViewTarget));
+    const result = await this.streetView.preview(clone(node.streetViewTarget));
+    if (result?.ok) this.previewReceipts.set(nodeId, {
+      mode: result.mode ?? 'official-viewer',
+      driftMeters: result.driftMeters ?? null,
+    });
+    return result;
   }
 
   calibrateAnchor(nodeId, options) {
@@ -122,13 +106,26 @@ export class AdventureWorkbench {
     return clone(node.streetViewTarget);
   }
 
-  acceptStreetViewLayout(nodeId) {
+  acceptStreetViewLayout(nodeId, { reviewer, notes, reviewedAt = new Date().toISOString() }) {
     const node = this.package.graph?.nodes?.find((item) => item.id === nodeId);
     if (!node) throw new Error(`Unknown anchor ${nodeId}`);
     if (node.streetViewTarget?.routeStatus !== 'needs-human-acceptance') {
       throw new Error('Preview and calibrate this anchor before human acceptance');
     }
+    const receipt = this.previewReceipts.get(nodeId);
+    if (!receipt) throw new Error('A successful official Street View preview is required');
+    if (!reviewer?.trim() || !notes?.trim()) {
+      throw new Error('Reviewer and review notes are required for auditable acceptance');
+    }
     node.streetViewTarget.routeStatus = 'verified';
+    node.streetViewTarget.reviewEvidence = {
+      method: 'official-street-view',
+      reviewedAt,
+      reviewer: reviewer.trim(),
+      notes: notes.trim(),
+      previewMode: receipt.mode,
+      driftMeters: receipt.driftMeters,
+    };
     return clone(node.streetViewTarget);
   }
 }

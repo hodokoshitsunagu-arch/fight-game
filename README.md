@@ -131,7 +131,8 @@ accept the real layout after human inspection, and start a playtest from any anc
 seed the selected anchor's required evidence and never emit discovery or telemetry effects.
 
 Development and production validation report stable codes, JSON-style paths and readable messages.
-Production additionally enforces the 36-anchor route shape, reviewed sources and cultural status,
+Production additionally enforces each package's versioned city-specific route-shape contract,
+reviewed sources and cultural status,
 non-blocking fallbacks, 1–4 participant collaboration rules, the two-enemy limit, human Street View
 acceptance and reviewed AI provenance. `npm run build` validates every entry in
 `src/campaign/v3/PublishedAdventurePackages.js` before Vite starts; the development tracer and

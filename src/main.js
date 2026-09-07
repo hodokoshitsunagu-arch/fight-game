@@ -35,11 +35,13 @@ async function boot() {
         import('./ui/AdventureWorkbenchUI.js'),
         import('./campaign/v3/StreetViewAdapter.js'),
       ]);
+      app.setAuthoringStreetView(true);
       window.adventureWorkbench = new AdventureWorkbenchUI({
         adventurePackage,
         streetView: new StreetViewAdapter(() => app.streetView),
         playtest: (draftPackage, startNodeId) =>
           app.startAuthorPlaytest(draftPackage, startNodeId),
+        onDispose: () => app.setAuthoringStreetView(false),
       });
     }
 

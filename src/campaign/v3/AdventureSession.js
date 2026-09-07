@@ -6,7 +6,12 @@ export class AdventureSession {
     if (errors.length) throw new Error(`Invalid adventure package: ${errors.join('; ')}`);
     this.package = adventurePackage;
     this.nodes = new Map(adventurePackage.graph.nodes.map((node) => [node.id, node]));
-    this.edges = new Map(adventurePackage.graph.edges.map((edge) => [edge.from, edge.to]));
+    this.edges = new Map();
+    for (const edge of adventurePackage.graph.edges) {
+      const outgoing = this.edges.get(edge.from) ?? [];
+      outgoing.push(edge);
+      this.edges.set(edge.from, outgoing);
+    }
     this.effectSequence = 0;
     this.pendingEffects = [];
     this.state = this._freshState();
@@ -107,9 +112,20 @@ export class AdventureSession {
     const evidence = new Set(this.state.evidenceIds);
     for (const id of node.interaction.grantsEvidence ?? []) evidence.add(id);
     this.state.evidenceIds = [...evidence];
-    const nextNodeId = this.edges.get(node.id);
-    if (nextNodeId) {
-      this._enterNode(nextNodeId);
+    const outgoing = this.edges.get(node.id) ?? [];
+    const actionOrder = node.interaction.actions.map((action) => action.id);
+    const votes = new Map(actionOrder.map((actionId) => [actionId, 0]));
+    for (const submission of this.state.submissions) {
+      votes.set(submission.actionId, (votes.get(submission.actionId) ?? 0) + 1);
+    }
+    const winningActionId = actionOrder.reduce((winner, actionId) =>
+      (votes.get(actionId) ?? 0) > (votes.get(winner) ?? -1) ? actionId : winner
+    , actionOrder[0]);
+    const nextEdge = outgoing.find((edge) => edge.actionId === winningActionId) ??
+      outgoing.find((edge) => !edge.actionId) ??
+      (outgoing.length === 1 ? outgoing[0] : null);
+    if (nextEdge) {
+      this._enterNode(nextEdge.to);
       return;
     }
 

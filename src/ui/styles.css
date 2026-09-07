@@ -1942,6 +1942,11 @@ body.is-streetview-navigation #viewport {
   font: inherit;
 }
 
+.adventure-workbench input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+}
+
 .adventure-workbench button {
   min-height: 34px;
   padding: 6px 10px;
@@ -2026,10 +2031,17 @@ body.is-streetview-navigation #viewport {
 
 .adventure-workbench__actions,
 .adventure-workbench__calibration,
+.adventure-workbench__review-gates,
 .adventure-workbench__relations {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.adventure-workbench__review-gates label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .adventure-workbench__relations h2 {
