@@ -96,6 +96,21 @@ npm run dev
 
 Then open the URL Vite prints (default <http://127.0.0.1:5173>).
 
+### Runtime modes
+
+| URL | Mode |
+| --- | --- |
+| `/` | Voice spellcasting sandbox and the existing v1 campaign |
+| `/?campaign=v2` | Ten-city cultural campaign v2; Street View is requested automatically |
+| `/?game` | RELIC: LAST STAND survival mode |
+
+The v2 campaign keeps v1 as the default during staged acceptance. It adds 10 chapters and 80
+authored anchors, four non-combat interaction types, chapter-local choices, per-fact source footnotes and a
+versioned save migration. A missing map or unavailable `localStorage` never blocks progress.
+Candidate anchor coordinates remain `needs-live-check` until the billable route verifier has been
+run; see [`docs/plans/ten-city-cultural-campaign.md`](docs/plans/ten-city-cultural-campaign.md) and
+[`docs/concepts/cultural-campaign-runtime.md`](docs/concepts/cultural-campaign-runtime.md).
+
 ```bash
 npm run build
 ```

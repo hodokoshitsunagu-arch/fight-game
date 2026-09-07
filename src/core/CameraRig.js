@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { settings } from '../config/settings.js';
 import { clamp, damp } from '../utils/math.js';
 import { LAYER } from './Layers.js';
+import { measureViewport } from './Viewport.js';
 
 const _dir = new Vector3();
 const _desiredTarget = new Vector3();
@@ -19,9 +20,10 @@ const _desiredTarget = new Vector3();
  */
 export class CameraRig {
   constructor(domElement) {
+    const viewport = measureViewport(domElement);
     this.camera = new PerspectiveCamera(
       settings.camera.fov,
-      window.innerWidth / window.innerHeight,
+      viewport.width / viewport.height,
       0.1,
       400
     );

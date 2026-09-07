@@ -31,6 +31,32 @@ const SCRIPT_ID = 'google-maps-js';
 
 /** Times Square, on the pedestrian island at the middle of the bowtie. */
 export const TIMES_SQUARE = { lat: 40.758, lng: -73.9855 };
+export const STREET_VIEW_NATIVE_NAVIGATION = Object.freeze({
+  linksControl: true,
+  clickToGo: true
+});
+
+export function distanceMeters(a, b) {
+  if (!a || !b) return Infinity;
+  const rad = Math.PI / 180;
+  const lat1 = a.lat * rad;
+  const lat2 = b.lat * rad;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+export function bearingDegrees(a, b) {
+  if (!a || !b) return 0;
+  const rad = Math.PI / 180;
+  const lat1 = a.lat * rad;
+  const lat2 = b.lat * rad;
+  const dLng = (b.lng - a.lng) * rad;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (Math.atan2(y, x) / rad + 360) % 360;
+}
 
 /**
  * Load the Maps JavaScript API once.
@@ -120,15 +146,17 @@ export class StreetViewBackdrop {
      */
     this.element = document.createElement('div');
     this.element.id = 'streetview';
-    // Behind the canvas, and deaf to input: the game owns the pointer, and a
-    // viewer that swallowed drags would fight the orbit controls for them.
+    // Behind the canvas. During exploration/question beats the canvas becomes
+    // pointer-transparent so Google's own navigation arrows receive clicks;
+    // combat restores the canvas hit target for spell casting.
     this.element.setAttribute(
       'style',
       // Explicit width/height rather than `inset:0`: measured at 960x0 with the
       // shorthand, so the viewer was loading its imagery into an element with no
       // height and nothing could ever show.
-      'position:fixed; top:0; left:0; width:100vw; height:100vh;' +
-        ' z-index:0; pointer-events:none; background:#0a0d12;'
+      'position:fixed; top:0; left:0; width:100vw; height:100vh; height:100dvh;' +
+        ' max-width:100vw; max-height:100dvh; overflow:hidden;' +
+        ' z-index:0; pointer-events:auto; background:#0a0d12;'
     );
     this.panes = [0, 1].map((index) => {
       const pane = document.createElement('div');
@@ -195,11 +223,10 @@ export class StreetViewBackdrop {
         // often somebody's phone panorama — lower resolution, arbitrary date,
         // and a personal copyright line in the attribution.
         source: maps.StreetViewSource?.OUTDOOR ?? undefined,
-        // Every control off: the game camera is the only thing that should move
-        // this. The Google logo and Terms link are not controls and stay — they
-        // are the attribution the terms require.
+        // Keep Google's native link arrows and click-to-go navigation. The game
+        // still owns camera heading and zoom, so its 3D layer remains aligned.
         addressControl: false,
-        linksControl: false,
+        ...STREET_VIEW_NATIVE_NAVIGATION,
         panControl: false,
         zoomControl: false,
         fullscreenControl: false,
@@ -207,7 +234,6 @@ export class StreetViewBackdrop {
         motionTrackingControl: false,
         enableCloseButton: false,
         showRoadLabels: false,
-        clickToGo: false,
         scrollwheel: false,
         disableDoubleClickZoom: true
       };
@@ -475,6 +501,72 @@ export class StreetViewBackdrop {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Reach an authored anchor without making panorama ids permanent content.
+   * Connected segments try the live link graph first; any mismatch, timeout or
+   * retired panorama falls back once to an outdoor coordinate lookup. Failure
+   * is returned as data so the campaign can fade forward rather than stall.
+   */
+  async moveToAnchor(anchor, { fromAnchor = null, timeoutMs = 12000 } = {}) {
+    if (!anchor || !Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) {
+      return { ok: false, mode: 'degraded', reason: 'invalid-anchor' };
+    }
+    if (!this.ready || !this.panorama) {
+      return { ok: false, mode: 'degraded', reason: 'street-view-unavailable' };
+    }
+
+    const target = { lat: anchor.lat, lng: anchor.lng };
+    const started = Date.now();
+    const walkAllowed = anchor.transition === 'walk' && fromAnchor;
+    if (walkAllowed) {
+      const steps = Math.max(1, Math.min(12, anchor.walkSteps ?? 4));
+      for (let index = 0; index < steps && Date.now() - started < timeoutMs; index++) {
+        const survey = this.survey();
+        const drift = distanceMeters(survey?.position, target);
+        if (drift <= anchor.radius) return { ok: true, mode: 'walk', driftMeters: Math.round(drift), steps: index };
+        const moved = await this._stepTowards(bearingDegrees(survey?.position, target));
+        if (!moved) break;
+      }
+      const survey = this.survey();
+      const drift = distanceMeters(survey?.position, target);
+      if (drift <= anchor.radius) return { ok: true, mode: 'walk', driftMeters: Math.round(drift), steps };
+    }
+
+    if (Date.now() - started >= timeoutMs) {
+      return { ok: false, mode: 'degraded', reason: 'route-timeout' };
+    }
+    const moved = await this.moveTo(anchor.lat, anchor.lng, anchor.radius);
+    if (!moved) return { ok: false, mode: 'degraded', reason: walkAllowed ? 'no-link-or-coordinate' : 'coordinate-unavailable' };
+    const drift = distanceMeters(this.survey()?.position, target);
+    return {
+      ok: Number.isFinite(drift) ? drift <= anchor.radius : true,
+      mode: walkAllowed ? 'coordinate-fallback' : 'coordinate',
+      driftMeters: Number.isFinite(drift) ? Math.round(drift) : null,
+      reason: Number.isFinite(drift) && drift > anchor.radius ? 'coordinate-drift' : null
+    };
+  }
+
+  async _stepTowards(heading) {
+    if (!this.ready || !this.panorama || this._stepping || this._swapping) return false;
+    const links = this.panorama.getLinks?.() ?? [];
+    const current = this.panorama.getPano?.() ?? null;
+    let best = null;
+    let bestOffset = Infinity;
+    for (const link of links) {
+      if (!link?.pano || link.pano === current || typeof link.heading !== 'number') continue;
+      const offset = Math.abs(((link.heading - heading + 540) % 360) - 180);
+      if (offset < bestOffset) {
+        best = link;
+        bestOffset = offset;
+      }
+    }
+    // A direction mismatch is a validation failure, not permission to wander.
+    if (!best || bestOffset > 95) return false;
+    this._stepping = true;
+    try { return Boolean(await this._swapTo(best.pano)); }
+    finally { this._stepping = false; }
   }
 
   /**

@@ -171,13 +171,13 @@ export class CampaignHUD {
     this.cardEl.classList.remove('is-visible');
   }
 
-  showDone(shards) {
+  showDone(shards, options = {}) {
     this.setObjective({ remaining: 0, shard: false });
     this.setHint('');
     this.cardBrief.classList.remove('is-visible');
-    this.cardLevel.textContent = '战役结束';
+    this.cardLevel.textContent = options.title ?? '战役结束';
     this.cardPlace.textContent = `${shards} 枚遗物碎片`;
-    this.cardBody.textContent = '遗物完整了。十个地方，你走过了它们全部。';
+    this.cardBody.textContent = options.body ?? '遗物完整了。十个地方，你走过了它们全部。';
     this.cardEl.classList.add('is-visible');
   }
 
@@ -186,6 +186,7 @@ export class CampaignHUD {
   }
 
   _levelNumber() {
+    if (Number.isFinite(this._level?.order)) return this._level.order;
     return (this._level?.id ? ['first-chime', 'echo', 'fracture', 'undertow', 'resonance']
       .indexOf(this._level.id) + 1 : 1);
   }

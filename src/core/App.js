@@ -38,8 +38,10 @@ import { PostProcessing } from '../postprocessing/PostProcessing.js';
 import { VoiceController } from '../voice/VoiceController.js';
 import { DummyField } from '../sandbox/DummyField.js';
 import { CampaignDirector } from '../campaign/CampaignDirector.js';
+import { CulturalCampaignDirector } from '../campaign/CulturalCampaignDirector.js';
 import { RelicShard } from '../campaign/RelicShard.js';
 import { CampaignHUD } from '../ui/CampaignHUD.js';
+import { InteractionHUD } from '../ui/InteractionHUD.js';
 import { SpawnTelegraph } from '../sandbox/SpawnTelegraph.js';
 import { StreetViewBackdrop } from '../world/StreetViewBackdrop.js';
 import { SceneSelector } from '../ui/SceneSelector.js';
@@ -92,6 +94,8 @@ export class App {
      */
     this.sandbox =
       typeof window === 'undefined' || !new URLSearchParams(window.location.search).has('game');
+    this.campaignVersion = typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('campaign') === 'v2' ? 2 : 1;
 
     /**
      * Seconds left before each ability can be armed again. Per element, so
@@ -227,6 +231,7 @@ export class App {
       this.dummies = new DummyField(this.enemies, { telegraph: this.spawnTelegraph });
       this.shard = new RelicShard(this.scene);
       this.campaignHUD = new CampaignHUD(document.body);
+      this.interactionHUD = this.campaignVersion === 2 ? new InteractionHUD(document.body) : null;
       this.mana = new Mana();
       this.statusBar = new StatusBar(document.body);
 
@@ -627,16 +632,21 @@ export class App {
   _buildCampaign() {
     if (!settings.campaign.enabled) return;
 
-    this.campaign = new CampaignDirector({
+    const Director = this.campaignVersion === 2 ? CulturalCampaignDirector : CampaignDirector;
+    this.campaign = new Director({
       dummies: this.dummies,
       shard: this.shard,
       // A getter, because the backdrop is built later, during `load()`.
       streetView: () => this.streetView,
       scenes: SCENES,
       hud: this.campaignHUD,
+      interactionHUD: this.interactionHUD,
       getFacing: () => this._facing(),
       getCurrentSceneId: () => this.scene_?.id ?? null
     });
+    if (this.interactionHUD) {
+      this.interactionHUD.onSkipCombat = () => this.campaign?.skipCombat?.();
+    }
 
     /*
      * Crossing a border is the same operation the scene selector performs, so
@@ -969,7 +979,10 @@ export class App {
     } catch {
       seen = false;
     }
-    if (!seen) this.hud.toggleHelp();
+    // v2 introduces itself through the interaction panel; stacking the legacy
+    // voice tutorial over that first decision obscures both on a phone. The ?
+    // button remains available and still opens this guide on demand.
+    if (!seen && this.campaignVersion !== 2) this.hud.toggleHelp();
   }
 
   /** Select an ability and arm it, unless it is still cooling down. */
@@ -1394,6 +1407,10 @@ export class App {
     // viewer is told where the camera looks and draws its own pixels.
     if (this.sandbox) {
       this.dummies.update(raw);
+      // Campaign enemies can down the shared PlayerHealth while the normal
+      // GameSession is idle. Keep its real-time recovery alive in sandbox mode
+      // or HP=0 becomes permanent and a combat anchor can never recover.
+      this.session.player.update(raw, null);
       /*
        * Wall-clock, not the clamped simulation delta.
        *
@@ -1543,6 +1560,7 @@ export class App {
       this.campaign?.dispose();
       this.shard?.dispose();
       this.campaignHUD?.dispose();
+      this.interactionHUD?.dispose();
     }
     this.input.dispose();
     this.aim.dispose();
