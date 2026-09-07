@@ -168,6 +168,16 @@ test('text export refuses prohibited Street View persistence fields', () => {
   }
 });
 
+test('text export refuses prohibited panorama ids in nested and route metadata', () => {
+  const nested = clone(NEW_YORK_TRACER_PACKAGE);
+  nested.graph.nodes[0].streetViewTarget.reviewEvidence = { panoId: 'must-not-export' };
+  assert.throws(() => exportAdventurePackage(nested), /prohibited Google imagery/i);
+
+  const route = clone(NEW_YORK_TRACER_PACKAGE);
+  route.geography.routes[0].metadata = { panorama_id: 'must-not-export' };
+  assert.throws(() => exportAdventurePackage(route), /prohibited Google imagery/i);
+});
+
 test('directed story branches follow the submitted semantic action during author preview', () => {
   const candidate = clone(NEW_YORK_TRACER_PACKAGE);
   candidate.graph.nodes[0].interaction.actions.push({ id: 'skip-case', label: 'Skip to reasoning' });

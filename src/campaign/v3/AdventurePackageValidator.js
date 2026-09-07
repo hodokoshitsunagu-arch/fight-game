@@ -82,7 +82,8 @@ function targetDiagnostics(node, path, { production }) {
 
 function isForbiddenStreetViewKey(key) {
   const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return normalized === 'pano' || normalized.includes('panorama') ||
+  return normalized === 'pano' || normalized.includes('panoid') ||
+    normalized.includes('panorama') ||
     (normalized.includes('pixel') && normalized.includes('hotspot')) ||
     (normalized.includes('streetview') &&
       (normalized.includes('image') || normalized.includes('imagery'))) ||
