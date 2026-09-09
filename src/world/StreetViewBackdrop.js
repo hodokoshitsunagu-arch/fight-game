@@ -110,6 +110,10 @@ export class StreetViewBackdrop {
     this.ready = false;
     this.error = null;
     this.interactionLocked = false;
+    // The sandbox camera owns the panorama by default. Adventure mode switches
+    // this to the official viewer so button and drag input are not written over
+    // by the Three.js frame loop.
+    this.povOwner = 'camera';
 
     /*
      * Two viewers, not one.
@@ -174,6 +178,10 @@ export class StreetViewBackdrop {
       });
     }
     this.element.dataset.interactionLocked = String(this.interactionLocked);
+  }
+
+  setPovOwner(owner) {
+    this.povOwner = owner === 'street-view' ? 'street-view' : 'camera';
   }
 
   applyNavigatorCommand(command) {
@@ -336,6 +344,18 @@ export class StreetViewBackdrop {
    */
   sync(camera) {
     if (!this.ready || !this.panorama) return;
+
+    if (this.povOwner === 'street-view') {
+      const pov = this.panorama.getPov?.() ?? {};
+      const zoom = this.panorama.getZoom?.();
+      if (Number.isFinite(pov.heading)) {
+        this._heading = pov.heading;
+        this.heading = pov.heading;
+      }
+      if (Number.isFinite(pov.pitch)) this._pitch = pov.pitch;
+      if (Number.isFinite(zoom)) this._zoom = zoom;
+      return;
+    }
 
     const m = camera.matrixWorld.elements;
     // Third basis column negated: the direction a camera looks down.

@@ -1890,6 +1890,10 @@ body.is-v3-adventure > .voice-hud {
   background: rgba(5, 16, 28, 0.55);
 }
 
+.v3-adventure-hud__touch-region {
+  background: transparent;
+}
+
 .v3-adventure-hud__zone strong {
   color: #b9dcff;
   font-size: 11px;
@@ -1986,21 +1990,61 @@ body.is-v3-adventure > .voice-hud {
 
 @media (max-width: 520px) {
   .v3-adventure-hud {
-    max-height: 54dvh;
+    top: max(8px, env(safe-area-inset-top));
+    bottom: auto;
+    max-height: 34dvh;
     overflow: auto;
     padding: 14px;
+    /* backdrop-filter creates a fixed-position containing block in Chromium;
+       disabling it here lets the 2x2 touch layer cover the viewport. */
+    backdrop-filter: none;
   }
 
   .v3-adventure-hud__title {
     font-size: 18px;
   }
 
-  .v3-adventure-hud__actions {
-    grid-template-columns: 1fr;
+  .v3-adventure-hud__touch-regions {
+    position: fixed;
+    inset: max(36dvh, 220px) 8px max(40px, env(safe-area-inset-bottom));
+    z-index: 49;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .v3-adventure-hud__touch-region {
+    align-content: center;
+    max-height: none;
+    overflow: visible;
+    border-color: transparent;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .v3-adventure-hud__touch-region > strong {
+    justify-self: start;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: rgba(5, 16, 28, 0.72);
+  }
+
+  .v3-adventure-hud__touch-region button,
+  .v3-adventure-hud__navigator-controls {
+    pointer-events: auto;
   }
 
   .v3-adventure-hud__fallback {
-    grid-column: auto;
+    position: fixed;
+    top: max(34dvh, 210px);
+    left: 50%;
+    width: min(260px, calc(100vw - 32px));
+    transform: translateX(-50%);
+    pointer-events: auto;
   }
 }
 

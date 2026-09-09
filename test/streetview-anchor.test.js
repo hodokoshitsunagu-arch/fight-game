@@ -6,6 +6,7 @@ import {
   STREET_VIEW_NATIVE_NAVIGATION,
   StreetViewBackdrop
 } from '../src/world/StreetViewBackdrop.js';
+import { StreetViewAdapter } from '../src/campaign/v3/StreetViewAdapter.js';
 
 test('anchor distance is zero in place and approximately one latitude degree', () => {
   assert.equal(distanceMeters({ lat: 0, lng: 0 }, { lat: 0, lng: 0 }), 0);
@@ -24,6 +25,64 @@ test('native Street View directional links and click-to-go remain enabled', () =
     linksControl: true,
     clickToGo: true
   });
+});
+
+test('navigator buttons change the official viewer POV', () => {
+  const povWrites = [];
+  const view = Object.create(StreetViewBackdrop.prototype);
+  view.ready = true;
+  view.panorama = {
+    getPov: () => ({ heading: 20, pitch: -7 }),
+    setPov: (pov) => povWrites.push(pov),
+  };
+
+  assert.equal(view.applyNavigatorCommand('turn-right'), true);
+  assert.deepEqual(povWrites, [{ heading: 50, pitch: -7 }]);
+  assert.equal(view.heading, 50);
+});
+
+test('a frame sync preserves official viewer drag heading and pitch in adventure ownership', () => {
+  const povWrites = [];
+  const view = Object.create(StreetViewBackdrop.prototype);
+  view.ready = true;
+  view.povOwner = 'street-view';
+  view._heading = 0;
+  view._pitch = 0;
+  view._zoom = 1;
+  view.panorama = {
+    getPov: () => ({ heading: 73, pitch: -12 }),
+    getZoom: () => 1,
+    setPov: (pov) => povWrites.push(pov),
+    setZoom: () => {},
+  };
+
+  view.sync({
+    matrixWorld: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+    fov: 60,
+  });
+
+  assert.deepEqual(povWrites, []);
+  assert.equal(view.heading, 73);
+  assert.equal(view._pitch, -12);
+});
+
+test('combat alone locks official interaction and exploration restores dragging', () => {
+  const options = [];
+  const view = Object.create(StreetViewBackdrop.prototype);
+  view.element = { dataset: {} };
+  view.viewers = [{ setOptions: (value) => options.push(value) }];
+  const adapter = new StreetViewAdapter(() => view);
+
+  adapter.setLocked({ locked: false, managedNavigation: true });
+  assert.equal(options.at(-1).draggable, true);
+  assert.equal(view.povOwner, 'street-view');
+
+  adapter.setLocked({ locked: true, managedNavigation: false });
+  assert.equal(options.at(-1).draggable, false);
+  assert.equal(view.povOwner, 'street-view');
+
+  adapter.setLocked({ locked: false, managedNavigation: true });
+  assert.equal(options.at(-1).draggable, true);
 });
 
 test('anchor navigation falls back to coordinates when the link graph fails', async () => {

@@ -97,7 +97,9 @@ export class StreetViewAdapter {
   }
 
   setLocked({ locked, managedNavigation = false } = {}) {
-    this.getStreetView?.()?.setInteractionLocked?.(locked || managedNavigation);
+    const view = this.getStreetView?.();
+    view?.setPovOwner?.(locked || managedNavigation ? 'street-view' : 'camera');
+    view?.setInteractionLocked?.(locked);
   }
 
   control(effect) {

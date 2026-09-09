@@ -118,11 +118,13 @@ The development v3 URL loads the versioned New York shared-shell package. S1–S
 archive crisis, teach the four fixed combat responsibilities and hold an informed public case vote;
 S4–S6 combine the selected case evidence and reach that case's authored conclusion. One through four
 people use the same package and one complete Street View. The navigator rotates at every non-combat
-anchor and is the only participant whose scoped controls can move the official viewer,
-participant regions appear only while input is needed, vote totals remain public, and ties resolve by
+anchor and owns both the scoped direction buttons and direct official-viewer drag. During these beats
+the viewer owns heading and pitch, so the Three.js frame loop cannot snap a manual change back.
+Participant regions appear only while input is needed; on narrow screens all four become a fixed 2×2
+transparent overlay instead of a scroll-dependent panel. Vote totals remain public, and ties resolve by
 majority, then a public group choice to apply an applicable evidence clue, then the current navigator.
-Combat locks Street View,
-uses at most two abstract anomalies and only advances by protecting, changing or producing evidence.
+Combat alone locks Street View; leaving combat restores viewer navigation. It uses at most two
+abstract anomalies and only advances by protecting, changing or producing evidence.
 For fewer than four people, responsibilities merge without AI teammates.
 
 Three failed attempts apply the authored deterministic accessibility fallback without inventing role

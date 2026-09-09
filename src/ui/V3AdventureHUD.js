@@ -25,7 +25,7 @@ export class V3AdventureHUD {
       <p class="v3-adventure-hud__fantasy"></p>
       <p class="v3-adventure-hud__prompt"></p>
       <div class="v3-adventure-hud__votes" aria-label="公开票数"></div>
-      <div class="v3-adventure-hud__actions"></div>
+      <div class="v3-adventure-hud__actions v3-adventure-hud__touch-regions"></div>
       <div class="v3-adventure-hud__completion"></div>
       <div class="v3-adventure-hud__disclosure"></div>
       <div class="v3-adventure-hud__sources"></div>
@@ -37,6 +37,7 @@ export class V3AdventureHUD {
     this.onSubmit = null;
     this.state = null;
     this.lastEchoSequence = 0;
+    this.lastEchoRunId = null;
     this._onKeyDown = (event) => this._handleKey(event);
     window.addEventListener('keydown', this._onKeyDown);
   }
@@ -47,6 +48,10 @@ export class V3AdventureHUD {
 
   render(state) {
     this.state = state;
+    if (state.runId !== this.lastEchoRunId) {
+      this.lastEchoRunId = state.runId;
+      this.lastEchoSequence = 0;
+    }
     const node = state.node;
     this.wrapper.classList.toggle('is-combat', state.streetViewLocked);
     document.body.classList.toggle('is-streetview-navigation', !state.streetViewLocked);
@@ -100,7 +105,7 @@ export class V3AdventureHUD {
     const combat = state.node?.interaction?.type === 'combat';
     for (const [index, participantId] of state.participantIds.entries()) {
       const zone = document.createElement('section');
-      zone.className = 'v3-adventure-hud__zone';
+      zone.className = 'v3-adventure-hud__zone v3-adventure-hud__touch-region';
       zone.dataset.participant = String(index + 1);
       const heading = document.createElement('strong');
       const roles = state.roleAssignments[participantId] ?? [];
@@ -183,7 +188,7 @@ export class V3AdventureHUD {
     this.actions.appendChild(note);
     for (const [index, participantId] of state.participantIds.entries()) {
       const zone = document.createElement('section');
-      zone.className = 'v3-adventure-hud__zone';
+      zone.className = 'v3-adventure-hud__zone v3-adventure-hud__touch-region';
       const heading = document.createElement('strong');
       heading.textContent = `P${index + 1}${participantId === state.navigatorParticipantId ? ' · 导航者' : ''}`;
       zone.appendChild(heading);

@@ -206,6 +206,7 @@ export class AdventureSession {
     this.state.segment = node.segment;
     this.state.status = 'awaiting-navigation';
     this.state.submissions = [];
+    this.state.lastContribution = null;
     this.state.availableActions = [];
     this.state.voteCounts = {};
     this.state.evidenceDecisions = {};
@@ -265,6 +266,7 @@ export class AdventureSession {
     }
     this.state.participantIds = this.state.participantIds.filter((id) => id !== participantId);
     this.state.submissions = this.state.submissions.filter((item) => item.participantId !== participantId);
+    this.state.lastContribution = null;
     this.state.roleAssignments = this._assignRoles(this.state.participantIds);
     if (!this.state.participantIds.includes(this.state.navigatorParticipantId)) {
       this.state.navigatorParticipantId = this.state.participantIds[0];

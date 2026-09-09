@@ -6,6 +6,7 @@ import { validateAdventurePackage } from '../src/campaign/v3/AdventurePackageVal
 import { AdventureWorkbench } from '../src/campaign/v3/AdventureWorkbench.js';
 import { importAdventurePackage } from '../src/campaign/v3/AdventurePackageSerializer.js';
 import { FakeStreetViewAdapter } from '../src/campaign/v3/StreetViewAdapter.js';
+import { DiscoveryStore } from '../src/campaign/v3/DiscoveryStore.js';
 import {
   NEW_YORK_SHARED_SHELL_PACKAGE,
 } from '../src/campaign/v3/packages/newYorkSharedShell.js';
@@ -287,4 +288,67 @@ test('normal interaction rejects a stale arrival snapshot and requires current S
   assert.equal(session.getState().submissions.length, 0);
   submitVote(session, 'solo', 'inspect-time-layer');
   assert.equal(session.getState().nodeId, 'S2');
+});
+
+test('temporary contribution echoes clear at anchor, restart, and regroup boundaries', () => {
+  const session = new AdventureSession(NEW_YORK_SHARED_SHELL_PACKAGE, {
+    createRunId: () => 'run-echo-boundaries',
+  });
+  session.start({ participantIds: ids(4) });
+  resolveNavigation(session);
+  submitVote(session, 'p1', 'inspect-time-layer');
+  assert.equal(session.getState().lastContribution.participantId, 'p1');
+
+  for (const participantId of ['p2', 'p3', 'p4']) {
+    submitVote(session, participantId, 'inspect-time-layer');
+  }
+  const combat = session.getState();
+  assert.equal(combat.nodeId, 'S2');
+  assert.equal(combat.lastContribution, null);
+
+  session.start({ participantIds: ids(4) });
+  assert.equal(session.getState().lastContribution, null);
+
+  reachCaseVote(session, ids(4), 'inspect-shoreline-layer');
+  ids(4).forEach((participantId) => submitVote(session, participantId, 'choose-manhattan'));
+  assert.equal(session.getState().nodeId, 'S4');
+  resolveNavigation(session);
+  submitVote(session, 'p1', 'combine-manhattan-time');
+  const durableBeforeRegroup = {
+    evidenceIds: session.getState().evidenceIds,
+    selectedCaseId: session.getState().selectedCaseId,
+    lastResolution: session.getState().lastResolution,
+  };
+  session.submit({ type: 'participant-departure', participantId: 'p4' });
+  const regrouped = session.getState();
+  assert.equal(regrouped.lastContribution, null);
+  assert.deepEqual(regrouped.participantIds, ['p1', 'p2', 'p3']);
+  assert.deepEqual(regrouped.evidenceIds, durableBeforeRegroup.evidenceIds);
+  assert.equal(regrouped.selectedCaseId, durableBeforeRegroup.selectedCaseId);
+  assert.deepEqual(regrouped.lastResolution, durableBeforeRegroup.lastResolution);
+  assert.equal(regrouped.submissions.length, 1);
+});
+
+test('a completed shared-shell discovery survives a fresh store after refresh', () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  const session = new AdventureSession(NEW_YORK_SHARED_SHELL_PACKAGE);
+  session.start({ participantIds: ['solo'] });
+  reachCaseVote(session, ['solo'], 'inspect-time-layer');
+  submitVote(session, 'solo', 'choose-manhattan');
+  for (const nodeId of ['S4', 'S5', 'S6']) {
+    assert.equal(session.getState().nodeId, nodeId);
+    resolveNavigation(session);
+    submitVote(session, 'solo', session.getState().availableActions[0].id);
+  }
+  const persist = session.takeEffects().find((effect) => effect.type === 'persist-discovery');
+  assert.equal(new DiscoveryStore(storage).apply(persist, NEW_YORK_SHARED_SHELL_PACKAGE), true);
+
+  const afterRefresh = new DiscoveryStore(storage).load(NEW_YORK_SHARED_SHELL_PACKAGE);
+  assert.deepEqual(afterRefresh.completedCaseIds, ['manhattan-time']);
+  assert.deepEqual(afterRefresh.endingIds, ['manhattan-time-restored']);
+  assert.equal(afterRefresh.cultureCards.length, 1);
 });
